@@ -1,0 +1,9 @@
+{
+  "id": "11491f28-4f57-445e-b196-eb21bb15c18f",
+  "alias": "SearchExportCsvButtonLibrary",
+  "componentType": "Library",
+
+  // The "*" signifies that the version should be taken from the package.json
+  "version": "*",
+  "manifestVersion": 2
+}

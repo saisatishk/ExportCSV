@@ -1,0 +1,20 @@
+{
+  "@microsoft/generator-sharepoint": {
+    "whichFolder": "subdir",
+    "solutionName": "exportcsv-search-export-lib",
+    "environment": "spo",
+    "packageManager": "npm",
+    "componentType": "library",
+    "componentName": "SearchExportCsvButton",
+    "plusBeta": false,
+    "isCreatingSolution": true,
+    "nodeVersion": "22.16.0",
+    "sdksVersions": {},
+    "version": "1.21.1",
+    "libraryName": "exportcsv-search-export-lib",
+    "libraryId": "6e140786-049c-431e-b507-0f695dc80aa0",
+    "solutionShortDescription": "exportcsv-search-export-lib description",
+    "skipFeatureDeployment": true,
+    "isDomainIsolated": false
+  }
+}

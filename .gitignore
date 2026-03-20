@@ -1,0 +1,4 @@
+# Editor / OS
+.cursor/
+.DS_Store
+Thumbs.db

@@ -1,0 +1,75 @@
+@import '~@microsoft/sp-office-ui-fabric-core/dist/sass/SPFabricCore.scss';
+
+.searchExportCsv {
+  border: 1px solid #edebe9;
+  border-radius: 4px;
+  padding: 12px;
+  color: "[theme:bodyText, default: #323130]";
+  background: #fff;
+}
+
+.title {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.description {
+  margin-bottom: 10px;
+  color: #605e5c;
+}
+
+.config {
+  font-size: 12px;
+  background: #faf9f8;
+  border: 1px solid #edebe9;
+  padding: 8px;
+  margin-bottom: 10px;
+  word-break: break-word;
+}
+
+.hint {
+  margin-top: 6px;
+  color: #605e5c;
+}
+
+.hintNote {
+  margin-top: 6px;
+  color: #605e5c;
+  border-left: 3px solid #ca5010;
+  padding-left: 8px;
+}
+
+.hintWarning {
+  margin-top: 6px;
+  color: #8a6116;
+  font-weight: 600;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+}
+
+.button {
+  min-width: 100px;
+  height: 32px;
+  border: 1px solid #8a8886;
+  background: #fff;
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.status {
+  margin-top: 10px;
+  font-size: 12px;
+}
+
+.error {
+  color: #a4262c;
+}

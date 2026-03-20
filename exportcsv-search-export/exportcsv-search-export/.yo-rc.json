@@ -1,0 +1,22 @@
+{
+  "@microsoft/generator-sharepoint": {
+    "whichFolder": "subdir",
+    "solutionName": "exportcsv-search-export",
+    "componentType": "webpart",
+    "template": "none",
+    "componentName": "SearchExportCsv",
+    "componentDescription": "Standalone export CSV button",
+    "plusBeta": false,
+    "isCreatingSolution": true,
+    "nodeVersion": "22.16.0",
+    "sdksVersions": {},
+    "version": "1.21.1",
+    "libraryName": "exportcsv-search-export",
+    "libraryId": "243301a0-4b91-4e94-89ee-838584697684",
+    "environment": "spo",
+    "packageManager": "npm",
+    "solutionShortDescription": "exportcsv-search-export description",
+    "skipFeatureDeployment": true,
+    "isDomainIsolated": false
+  }
+}

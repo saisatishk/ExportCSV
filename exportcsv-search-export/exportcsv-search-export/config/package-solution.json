@@ -1,0 +1,40 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/spfx-build/package-solution.schema.json",
+  "solution": {
+    "name": "exportcsv-search-export-client-side-solution",
+    "id": "243301a0-4b91-4e94-89ee-838584697684",
+    "version": "1.0.0.0",
+    "includeClientSideAssets": true,
+    "skipFeatureDeployment": true,
+    "isDomainIsolated": false,
+    "developer": {
+      "name": "",
+      "websiteUrl": "",
+      "privacyUrl": "",
+      "termsOfUseUrl": "",
+      "mpnId": "Undefined-1.21.1"
+    },
+    "metadata": {
+      "shortDescription": {
+        "default": "exportcsv-search-export description"
+      },
+      "longDescription": {
+        "default": "exportcsv-search-export description"
+      },
+      "screenshotPaths": [],
+      "videoUrl": "",
+      "categories": []
+    },
+    "features": [
+      {
+        "title": "exportcsv-search-export Feature",
+        "description": "The feature that activates elements of the exportcsv-search-export solution.",
+        "id": "e1637751-65d1-4390-aeba-3844d8e341ea",
+        "version": "1.0.0.0"
+      }
+    ]
+  },
+  "paths": {
+    "zippedPackage": "solution/exportcsv-search-export.sppkg"
+  }
+}
