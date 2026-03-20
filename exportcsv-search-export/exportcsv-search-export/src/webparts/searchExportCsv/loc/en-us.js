@@ -1,12 +1,8 @@
 define([], function() {
   return {
-    "PropertyPaneDescription": "Match Search Results: set the same result source ID. Keywords and refiners come from the page URL and search box automatically.",
-    "BasicGroupName": "Export settings",
     "ResolvedQueryLabel": "Keywords sent as Querytext (resolved)",
     "SourceIdLabel": "Result source ID",
-    "SourceIdDescription": "Same GUID as PnP Search Results \u2192 Data sources \u2192 Result source id. Optional: override with URL parameter sourceid.",
-    "AppendUrlFiltersLabel": "Apply PnP refiners from URL `f` as RefinementFilters (FQL)",
-    "DebugApiLabel": "Debug API extraction (local)",
+    "DebugApiLabel": "Show debug details on the page",
     "WebPartTitle": "Search Export CSV",
     "WebPartDescription": "Exports SharePoint search results to CSV. Keywords: URL (e.g. k, q) or page search box; refiners: `f`.",
     "QuerySourceLabel": "Querytext source",
@@ -27,7 +23,6 @@ define([], function() {
     "ExportCompleted": "Export complete. Rows exported:",
     "ExportFailedPrefix": "Export failed:",
     "FiltersFromUrlLabel": "Refiners for export (URL `f`, other params, or page UI)",
-    "FiltersDisabledLabel": "Off (enable in properties)",
     "NoFiltersInUrlLabel": "None in URL",
     "FiltersParseFailedLabel": "Could not parse `f` parameter",
     "FiltersDiscoveredInUrlLabel": "URL (any param)",

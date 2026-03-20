@@ -35,12 +35,7 @@ function ensureHistoryPatchForSearchExport(): void {
 export interface ISearchExportCsvWebPartProps {
   /** Result source GUID (must match Search Results). Optional URL override: `sourceid`. */
   sourceId: string;
-  /**
-   * When true, read PnP Filters URL `f` JSON (and same discovery as before) and apply via
-   * SharePoint RefinementFilters (FQL) so results match the Filters + Search Results web parts.
-   */
-  appendUrlFilters: boolean;
-  /** Show API extraction diagnostics in the UI (useful while debugging locally). */
+  /** Show full diagnostics on the page; when off, only Export (and Cancel while running) is shown. */
   debugApi?: boolean;
 }
 
@@ -147,8 +142,7 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
     })();
 
     const hasActiveRefinersForExport =
-      this.properties.appendUrlFilters === true &&
-      (!!((filterParts.refinementFql || '').trim()) || !!((filterParts.filterKql || '').trim()));
+      !!((filterParts.refinementFql || '').trim()) || !!((filterParts.filterKql || '').trim());
 
     const noKeywordsHintMessage = !effectiveQueryText.value.trim()
       ? hasActiveRefinersForExport
@@ -156,8 +150,14 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
         : strings.ExportNoKeywordsNoRefinersHint
       : '';
 
+    const showDebugUi = this.properties.debugApi === true;
+    const sectionClass = `${styles.searchExportCsv}${showDebugUi ? '' : ` ${styles.searchExportCsvMinimal}`}`;
+
     this.domElement.innerHTML = `
-      <section class="${styles.searchExportCsv}">
+      <section class="${sectionClass}">
+        ${
+          showDebugUi
+            ? `
         <div class="${styles.title}">${strings.WebPartTitle}</div>
         <div class="${styles.description}">${strings.WebPartDescription}</div>
 
@@ -180,11 +180,17 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
               ? `<div class="${styles.hint}"><strong>${strings.EffectiveFilterKqlLabel}:</strong> ${this._escapeHtml(combinedFilterHint)}</div>`
               : ''
           }
-        </div>
+        </div>`
+            : ''
+        }
 
         <div class="${styles.actions}">
           <button type="button" class="${styles.button}" data-action="export">${strings.ExportButtonLabel}</button>
-          <button type="button" class="${styles.button}" data-action="cancel" disabled>${strings.CancelButtonLabel}</button>
+          ${
+            showDebugUi
+              ? `<button type="button" class="${styles.button}" data-action="cancel" disabled>${strings.CancelButtonLabel}</button>`
+              : ''
+          }
         </div>
 
         <div class="${styles.status}" data-role="status"></div>
@@ -192,16 +198,20 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
     `;
 
     const exportButton = this.domElement.querySelector<HTMLButtonElement>('button[data-action="export"]');
-    const cancelButton = this.domElement.querySelector<HTMLButtonElement>('button[data-action="cancel"]');
+    const cancelButton = showDebugUi
+      ? this.domElement.querySelector<HTMLButtonElement>('button[data-action="cancel"]')
+      : null;
     const status = this.domElement.querySelector<HTMLDivElement>('div[data-role="status"]');
 
-    if (!exportButton || !cancelButton || !status) return;
+    if (!exportButton || !status) return;
 
     const showError = (message: string): void => {
       status.textContent = message;
       status.className = `${styles.status} ${styles.error}`;
       exportButton.disabled = false;
-      cancelButton.disabled = true;
+      if (cancelButton) {
+        cancelButton.disabled = true;
+      }
     };
 
     exportButton.onclick = async (): Promise<void> => {
@@ -234,7 +244,9 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
 
       this._isCancelled = false;
       exportButton.disabled = true;
-      cancelButton.disabled = false;
+      if (cancelButton) {
+        cancelButton.disabled = false;
+      }
       status.textContent = strings.ExportStarted;
       status.className = `${styles.status}`;
 
@@ -343,16 +355,20 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
         showError(`${strings.ExportFailedPrefix} ${message}`);
       } finally {
         exportButton.disabled = false;
-        cancelButton.disabled = true;
+        if (cancelButton) {
+          cancelButton.disabled = true;
+        }
       }
     };
 
-    cancelButton.onclick = (): void => {
-      this._isCancelled = true;
-      cancelButton.disabled = true;
-      status.textContent = strings.CancellingMessage;
-      status.className = `${styles.status}`;
-    };
+    if (cancelButton) {
+      cancelButton.onclick = (): void => {
+        this._isCancelled = true;
+        cancelButton.disabled = true;
+        status.textContent = strings.CancellingMessage;
+        status.className = `${styles.status}`;
+      };
+    }
     } finally {
       this._lastUrlFingerprint = `${window.location.search}|${window.location.hash}`;
     }
@@ -980,13 +996,7 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
    * Also discovers the same JSON under other param keys / hash, then falls back to visible File type UI.
    */
   private _getUrlFilterParts(): { filterKql: string; refinementFql: string; summary: string } {
-    // Default: do NOT apply URL refiners unless explicitly enabled.
-    // (If we treat `undefined` as enabled, leftover `f=` can easily filter everything out.)
-    const useFilters = this.properties.appendUrlFilters === true;
-    if (!useFilters) {
-      return { filterKql: '', refinementFql: '', summary: strings.FiltersDisabledLabel };
-    }
-
+    // Always apply PnP URL `f` (and discovery / UI fallback) via RefinementFilters — matches Filters web part.
     const paramKey = 'f';
     let raw: string | undefined;
     let summaryPrefix: string | undefined;
@@ -1703,19 +1713,12 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
     return {
       pages: [
         {
-          header: {
-            description: strings.PropertyPaneDescription
-          },
           groups: [
             {
-              groupName: strings.BasicGroupName,
+              groupName: '',
               groupFields: [
                 PropertyPaneTextField('sourceId', {
-                  label: strings.SourceIdLabel,
-                  description: strings.SourceIdDescription
-                }),
-                PropertyPaneToggle('appendUrlFilters', {
-                  label: strings.AppendUrlFiltersLabel
+                  label: strings.SourceIdLabel
                 }),
                 PropertyPaneToggle('debugApi', {
                   label: strings.DebugApiLabel

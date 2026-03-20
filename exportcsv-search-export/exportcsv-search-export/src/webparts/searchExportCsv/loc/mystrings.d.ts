@@ -1,9 +1,6 @@
 declare interface ISearchExportCsvWebPartStrings {
-  PropertyPaneDescription: string;
-  BasicGroupName: string;
   ResolvedQueryLabel: string;
   SourceIdLabel: string;
-  SourceIdDescription: string;
   DebugApiLabel: string;
   WebPartTitle: string;
   WebPartDescription: string;
@@ -25,10 +22,8 @@ declare interface ISearchExportCsvWebPartStrings {
   ExportCompleted: string;
   ExportFailedPrefix: string;
   FiltersFromUrlLabel: string;
-  FiltersDisabledLabel: string;
   NoFiltersInUrlLabel: string;
   FiltersParseFailedLabel: string;
-  AppendUrlFiltersLabel: string;
   FiltersDiscoveredInUrlLabel: string;
   FiltersFromUiLabel: string;
   EffectiveFilterKqlLabel: string;

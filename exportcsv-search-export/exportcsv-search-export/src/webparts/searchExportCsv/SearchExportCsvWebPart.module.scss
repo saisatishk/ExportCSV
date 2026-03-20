@@ -8,6 +8,13 @@
   background: #fff;
 }
 
+/* Non-debug: only Export is visible; Cancel appears while an export is in progress. */
+.searchExportCsvMinimal {
+  border: none;
+  padding: 0;
+  background: transparent;
+}
+
 .title {
   font-size: 16px;
   font-weight: 600;
