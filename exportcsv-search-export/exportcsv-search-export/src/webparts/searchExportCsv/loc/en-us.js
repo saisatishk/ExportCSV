@@ -2,6 +2,8 @@ define([], function() {
   return {
     "ResolvedQueryLabel": "Keywords sent as Querytext (resolved)",
     "SourceIdLabel": "Result source ID",
+    "ExportColumnsLabel": "CSV columns (managed properties)",
+    "ExportColumnsDescription": "Comma-separated names, e.g. Title,Path,Author,ModifiedOWSDATE,FileType. IndexDocId is added automatically for paging if omitted. Empty uses Title,Path,Author.",
     "DebugApiLabel": "Show debug details on the page",
     "WebPartTitle": "Search Export CSV",
     "WebPartDescription": "Exports SharePoint search results to CSV. Keywords: URL (e.g. k, q) or page search box; refiners: `f`.",

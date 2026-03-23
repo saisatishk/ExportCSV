@@ -1,6 +1,8 @@
 declare interface ISearchExportCsvWebPartStrings {
   ResolvedQueryLabel: string;
   SourceIdLabel: string;
+  ExportColumnsLabel: string;
+  ExportColumnsDescription: string;
   DebugApiLabel: string;
   WebPartTitle: string;
   WebPartDescription: string;

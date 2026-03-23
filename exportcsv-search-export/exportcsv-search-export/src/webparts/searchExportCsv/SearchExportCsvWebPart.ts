@@ -9,19 +9,11 @@ import { SPHttpClient, SPHttpClientResponse } from '@microsoft/sp-http';
 
 import styles from './SearchExportCsvWebPart.module.scss';
 import * as strings from 'SearchExportCsvWebPartStrings';
-
+import { mergeSelectPropertiesForExport, parseExportColumnKeys } from './exportColumnsConfig';
 /** Dispatched when `history.pushState` / `replaceState` run (PnP Modern Search updates filters this way). */
 const SEARCH_EXPORT_LOCATION_CHANGE = 'searchExportCsvLocationChange';
 
-/**
- * Rows per SharePoint Search request (`RowLimit` / `RowsPerPage` on `/_api/search/postquery`).
- *
- * **Important:** The Search REST API caps results at **500 rows per request** (documented platform limit).
- * Asking for 5000 (or any value above 500) does **not** increase rows per response — the service still returns
- * at most 500 per call. Export continues paging with `IndexDocId` until all rows are retrieved.
- *
- * If Microsoft raises this limit in the future, increase the constant (still subject to tenant caps).
- */
+/** Search `RowLimit`/`RowsPerPage`; platform often caps ~500/response — export pages with IndexDocId. */
 const EXPORT_PAGE_SIZE = 5000;
 
 /** Safety cap for total exported rows. */
@@ -49,6 +41,8 @@ function ensureHistoryPatchForSearchExport(): void {
 export interface ISearchExportCsvWebPartProps {
   /** Result source GUID (must match Search Results). Optional URL override: `sourceid`. */
   sourceId: string;
+  /** Comma-separated managed property names for CSV columns (e.g. Title,Path,Author,ModifiedOWSDATE). */
+  exportColumns?: string;
   /** Show full diagnostics on the page; when off, only Export (and Cancel while running) is shown. */
   debugApi?: boolean;
 }
@@ -65,10 +59,7 @@ interface IPnpFilterGroup {
   operator?: string;
 }
 
-/**
- * Mirrors PnP `FilterComparisonOperator` (see `@pnp/modern-search-extensibility` IDataFilter.d.ts).
- * URL `f` JSON stores the numeric enum on each filter value.
- */
+/** PnP `FilterComparisonOperator` mirror; URL `f` JSON stores the numeric enum per filter value. */
 const enum PnpFilterComparisonOperator {
   Eq = 0,
   Neq = 1,
@@ -265,8 +256,8 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
       status.className = `${styles.status}`;
 
       try {
-        const columns = ['Title', 'Path', 'Author'];
-        const selectPropertiesList = ['Title', 'Path', 'Author', 'DocId'];
+        const columns = parseExportColumnKeys(this.properties.exportColumns);
+        const selectPropertiesList = mergeSelectPropertiesForExport(columns);
         const selectProperties = selectPropertiesList.join(',');
         const pageSize = EXPORT_PAGE_SIZE;
         const maxRows = MAX_EXPORT_ROWS;
@@ -318,6 +309,7 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
             pageSize,
             selectProperties,
             selectPropertiesList,
+            exportColumnKeys: columns,
             refinementFilters: refinementFiltersPayload,
             enableGetFallbackWhenEmpty: lastDocId === undefined
           });
@@ -331,13 +323,12 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
 
           for (let i = 0; i < result.rows.length; i++) {
             const row = result.rows[i];
-            csvLines.push(
-              [
-                this._escapeCsvCell(row.Title),
-                this._escapeCsvCell(row.Path),
-                this._escapeCsvCell(row.Author)
-              ].join(',')
-            );
+            const cells: string[] = [];
+            for (let c = 0; c < columns.length; c++) {
+              const key = columns[c];
+              cells.push(this._escapeCsvCell(row[key] || ''));
+            }
+            csvLines.push(cells.join(','));
           }
 
           exported += result.rows.length;
@@ -1713,8 +1704,11 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
     return await response.json();
   }
 
-  private _extractRowsFromSearchJson(json: unknown): {
-    rows: Array<{ Title: string; Path: string; Author: string }>;
+  private _extractRowsFromSearchJson(
+    json: unknown,
+    exportColumnKeys: string[]
+  ): {
+    rows: Array<Record<string, string>>;
     lastDocId?: number;
     totalRows?: number;
     totalRowsRawType: string;
@@ -1769,11 +1763,12 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
     const mapped = rows.map((row) => {
       const rowObj = row as { Cells?: unknown };
       const cells = toCellsArray(rowObj?.Cells);
-      return {
-        Title: this._normalizeToString(this._getCellValue(cells, ['Title']) || ''),
-        Path: this._normalizeToString(this._getCellValue(cells, ['Path']) || ''),
-        Author: this._normalizeToString(this._getCellValue(cells, ['Author']) || '')
-      };
+      const out: Record<string, string> = {};
+      for (let k = 0; k < exportColumnKeys.length; k++) {
+        const name = exportColumnKeys[k];
+        out[name] = this._normalizeToString(this._getCellValue(cells, [name]) || '');
+      }
+      return out;
     });
 
     const lastRow = rows.length > 0 ? rows[rows.length - 1] : undefined;
@@ -1810,12 +1805,14 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
     pageSize: number;
     selectProperties: string;
     selectPropertiesList?: string[];
+    /** Managed property names for CSV (subset of SelectProperties). */
+    exportColumnKeys: string[];
     /** FQL refinement strings (e.g. `FileType:equals("docx")`) — same mechanism as PnP filter web part. */
     refinementFilters?: string[];
     /** If false, skip GET `search/query` when postquery returns 0 rows (IndexDocId pages: empty = done). */
     enableGetFallbackWhenEmpty?: boolean;
   }): Promise<{
-    rows: Array<{ Title: string; Path: string; Author: string }>;
+    rows: Array<Record<string, string>>;
     lastDocId?: number;
     totalRows?: number;
     debug: {
@@ -1920,8 +1917,9 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
       }
     }
 
+    const colKeys = params.exportColumnKeys && params.exportColumnKeys.length > 0 ? params.exportColumnKeys : ['Title', 'Path', 'Author'];
     let transport = `postquery:${odataAttempt}`;
-    let ex = this._extractRowsFromSearchJson(json);
+    let ex = this._extractRowsFromSearchJson(json, colKeys);
 
     const allowGetFallback = params.enableGetFallbackWhenEmpty !== false;
     if (ex.rows.length === 0 && allowGetFallback) {
@@ -1934,7 +1932,7 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
           selectProps,
           refinementFqlForGet
         );
-        const exGet = this._extractRowsFromSearchJson(jsonGet);
+        const exGet = this._extractRowsFromSearchJson(jsonGet, colKeys);
         if (exGet.rows.length > 0) {
           ex = exGet;
           transport = 'GET /_api/search/query';
@@ -1982,6 +1980,11 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
               groupFields: [
                 PropertyPaneTextField('sourceId', {
                   label: strings.SourceIdLabel
+                }),
+                PropertyPaneTextField('exportColumns', {
+                  label: strings.ExportColumnsLabel,
+                  description: strings.ExportColumnsDescription,
+                  multiline: true
                 }),
                 PropertyPaneToggle('debugApi', {
                   label: strings.DebugApiLabel

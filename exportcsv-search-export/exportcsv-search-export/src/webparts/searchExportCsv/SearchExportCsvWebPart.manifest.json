@@ -22,7 +22,8 @@
     "description": { "default": "Standalone export CSV button" },
     "officeFabricIconFontName": "Page",
     "properties": {
-      "sourceId": ""
+      "sourceId": "",
+      "exportColumns": "Title,Path,Author"
     }
   }]
 }
