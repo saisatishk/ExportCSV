@@ -13,6 +13,15 @@ import * as strings from 'SearchExportCsvWebPartStrings';
 /** Dispatched when `history.pushState` / `replaceState` run (PnP Modern Search updates filters this way). */
 const SEARCH_EXPORT_LOCATION_CHANGE = 'searchExportCsvLocationChange';
 
+/**
+ * Rows per search request. Larger = fewer HTTP round-trips (faster bulk export).
+ * Some tenants cap RowLimit (often 500); if postquery errors, try lowering this.
+ */
+const EXPORT_PAGE_SIZE = 5000;
+
+/** Safety cap for total exported rows. */
+const MAX_EXPORT_ROWS = 200000;
+
 /** One-time patch so URL-only updates re-render this web part. */
 function ensureHistoryPatchForSearchExport(): void {
   const w = window as Window & { __searchExportCsvHistoryPatched?: boolean };
@@ -253,8 +262,8 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
       try {
         const columns = ['Title', 'Path', 'Author'];
         const selectProperties = ['Title', 'Path', 'Author', 'DocId'].join(',');
-        const pageSize = 500;
-        const maxRows = 200000;
+        const pageSize = EXPORT_PAGE_SIZE;
+        const maxRows = MAX_EXPORT_ROWS;
         let pageIndex = 0;
         let exported = 0;
         let totalRows: number | undefined;
@@ -795,6 +804,97 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
     return `datetime("${this._escapeFqlEqualsArg(t)}")`;
   }
 
+  /** PnP `f` JSON may omit operators or use string names; normalize for Geq/Leq pairing. */
+  private _coercePnpComparisonOperator(raw: unknown): number | undefined {
+    if (raw === undefined || raw === null) {
+      return undefined;
+    }
+    if (typeof raw === 'number') {
+      if (isNaN(raw)) {
+        return undefined;
+      }
+      return raw;
+    }
+    if (typeof raw === 'string') {
+      const t = raw.trim();
+      if (!t) {
+        return undefined;
+      }
+      const n = Number(t);
+      if (!isNaN(n) && String(n) === t) {
+        return n;
+      }
+      const byName: Record<string, number> = {
+        eq: PnpFilterComparisonOperator.Eq,
+        neq: PnpFilterComparisonOperator.Neq,
+        gt: PnpFilterComparisonOperator.Gt,
+        lt: PnpFilterComparisonOperator.Lt,
+        geq: PnpFilterComparisonOperator.Geq,
+        leq: PnpFilterComparisonOperator.Leq,
+        contains: PnpFilterComparisonOperator.Contains
+      };
+      const hit = byName[t.toLowerCase()];
+      if (hit !== undefined) {
+        return hit;
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * When date bounds were joined with `or(...)` we emit half-open FQL:
+   * `range(min, hi, LE)` and `range(lo, max, GE)`. That OR is almost always true — merge to one interval.
+   */
+  private _mergeOrDateHalfRangeFqlIfApplicable(
+    managedProperty: string,
+    parts: string[],
+    innerJoin: string
+  ): string | undefined {
+    if (String(innerJoin).toLowerCase() !== 'or' || parts.length !== 2) {
+      return undefined;
+    }
+
+    const lePrefix = `${managedProperty}:range(min, datetime("`;
+    const leSuffix = '"), to="LE")';
+    const gePrefix = `${managedProperty}:range(datetime("`;
+    const geSuffix = '"), max, from="GE")';
+
+    const parseLeHalfIso = (s: string): string | undefined => {
+      if (s.indexOf(lePrefix) !== 0 || s.lastIndexOf(leSuffix) !== s.length - leSuffix.length) {
+        return undefined;
+      }
+      const iso = s.slice(lePrefix.length, s.length - leSuffix.length);
+      return iso.indexOf('"') === -1 && iso.length > 0 ? iso : undefined;
+    };
+
+    const parseGeHalfIso = (s: string): string | undefined => {
+      if (s.indexOf(gePrefix) !== 0 || s.lastIndexOf(geSuffix) !== s.length - geSuffix.length) {
+        return undefined;
+      }
+      const iso = s.slice(gePrefix.length, s.length - geSuffix.length);
+      return iso.indexOf('"') === -1 && iso.length > 0 ? iso : undefined;
+    };
+
+    const pick = (a: string, b: string): string | undefined => {
+      const isoHi = parseLeHalfIso(a);
+      const isoLo = parseGeHalfIso(b);
+      if (!isoHi || !isoLo) {
+        return undefined;
+      }
+      let loIso = isoLo;
+      let hiIso = isoHi;
+      if (this._normalizeIsoForFqlDateTime(loIso) > this._normalizeIsoForFqlDateTime(hiIso)) {
+        const swap = loIso;
+        loIso = hiIso;
+        hiIso = swap;
+      }
+      return `${managedProperty}:range(${this._fqlDatetimeOperandFromIso(loIso)}, ${this._fqlDatetimeOperandFromIso(
+        hiIso
+      )}, from="GE", to="LE")`;
+    };
+    return pick(parts[0], parts[1]) ?? pick(parts[1], parts[0]);
+  }
+
   /**
    * PnP date refiners belong in RefinementFilters (FQL), not KQL Querytext — same path as FileType in the refiners web part.
    * Uses RANGE / equals patterns from MS FQL reference.
@@ -808,10 +908,8 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
       if (!raw || !this._looksLikeIsoDateTimeForKql(raw)) {
         continue;
       }
-      const op =
-        vals[i].operator !== undefined && vals[i].operator !== null
-          ? Number(vals[i].operator)
-          : PnpFilterComparisonOperator.Eq;
+      const coerced = this._coercePnpComparisonOperator(vals[i].operator);
+      const op = coerced !== undefined ? coerced : PnpFilterComparisonOperator.Eq;
       dated.push({ op, iso: raw });
     }
     if (dated.length === 0) {
@@ -820,7 +918,12 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
 
     const innerJoin = String(group.operator || 'or').toLowerCase() === 'and' ? 'and' : 'or';
 
-    if (dated.length === 2 && innerJoin === 'and') {
+    /**
+     * PnP often sets `group.operator` to **"or"** on date refiner buckets, but a **Geq + Leq** pair is still one
+     * inclusive interval (AND). If we OR two half-ranges (`>= start` OR `<= end`), almost all dates match →
+     * count blows past Search Results. Always fold Geq+Leq into a single RANGE regardless of group.operator.
+     */
+    if (dated.length === 2) {
       let geD: Dated | undefined;
       let leD: Dated | undefined;
       for (let d = 0; d < dated.length; d++) {
@@ -833,8 +936,15 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
         }
       }
       if (geD && leD) {
-        return `${managedProperty}:range(${this._fqlDatetimeOperandFromIso(geD.iso)}, ${this._fqlDatetimeOperandFromIso(
-          leD.iso
+        let geIso = geD.iso;
+        let leIso = leD.iso;
+        if (this._normalizeIsoForFqlDateTime(geIso) > this._normalizeIsoForFqlDateTime(leIso)) {
+          const swap = geIso;
+          geIso = leIso;
+          leIso = swap;
+        }
+        return `${managedProperty}:range(${this._fqlDatetimeOperandFromIso(geIso)}, ${this._fqlDatetimeOperandFromIso(
+          leIso
         )}, from="GE", to="LE")`;
       }
     }
@@ -872,6 +982,10 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
     if (parts.length === 1) {
       return parts[0];
     }
+    const mergedHalf = this._mergeOrDateHalfRangeFqlIfApplicable(managedProperty, parts, innerJoin);
+    if (mergedHalf) {
+      return mergedHalf;
+    }
     return innerJoin === 'and' ? `and(${parts.join(', ')})` : `or(${parts.join(', ')})`;
   }
 
@@ -902,8 +1016,132 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
   }
 
   /**
+   * People / author checkbox refiners (User, Author, DisplayAuthor, …) must use RefinementFilters FQL on
+   * `Author` — same as the Filters web part. KQL on `DisplayAuthor` does not match that path and skews counts.
+   */
+  private _buildAuthorRefinerFqlGroup(group: IPnpFilterGroup): string {
+    const vals = group.values || [];
+    const pieces: string[] = [];
+    const filterLabel = (group.filterName || '').trim();
+    for (let v = 0; v < vals.length; v++) {
+      const display = this._extractPnpFilterDisplayValue(filterLabel, vals[v]);
+      if (!display) {
+        continue;
+      }
+      const esc = this._escapeFqlEqualsArg(display.trim());
+      pieces.push(`Author:equals("${esc}")`);
+    }
+    if (pieces.length === 0) {
+      return '';
+    }
+    if (pieces.length === 1) {
+      return pieces[0];
+    }
+    const innerOpLower = String(group.operator || 'or').toLowerCase();
+    const innerOp = innerOpLower === 'and' ? ' AND ' : ' OR ';
+    return `(${pieces.join(innerOp)})`;
+  }
+
+  /** filterName values PnP uses for “people” refiners (checkbox / user picker). */
+  private _isPersonAuthorRefinerFilterName(fn: string): boolean {
+    const s = (fn || '').trim().toLowerCase();
+    if (!s) {
+      return false;
+    }
+    const known = new Set<string>([
+      'user',
+      'users',
+      'author',
+      'authors',
+      'displayauthor',
+      'authorowsuser',
+      'authorname',
+      'documentauthor',
+      'publisher',
+      'createdby',
+      'modifiedby',
+      'lastmodifiedby',
+      'owstaxidauthor',
+      'siteauthor',
+      'people',
+      'person',
+      'persons'
+    ]);
+    return known.has(s);
+  }
+
+  /**
+   * PnP-managed refiner columns use managed property names like `RefinableString09`. The Filters web part
+   * applies them via RefinementFilters (FQL), not QueryText — same as FileType. No per-tenant name list needed.
+   */
+  private _isRefinableManagedPropertyName(name: string): boolean {
+    return /^Refinable(String|Date|Int|Decimal|Double|Guid)/i.test((name || '').trim());
+  }
+
+  /**
+   * SharePoint often encodes refiner selections as opaque tokens in `values[].value` (e.g. leading `ǂ` + hex).
+   * When present, use them in FQL equals — same data PnP sends back to search.
+   */
+  private _isLikelyRefinementTokenValue(raw: string): boolean {
+    const t = (raw || '').trim();
+    if (!t) {
+      return false;
+    }
+    if (t.indexOf('ǂ') === 0) {
+      return true;
+    }
+    if (/^[0-9a-fA-F]{8,}$/i.test(t)) {
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Generic FQL for any managed property that matches `Refinable*` — covers most custom PnP filter fields.
+   */
+  private _buildManagedPropertyRefinerFqlGroup(group: IPnpFilterGroup): string {
+    const mp = (group.filterName || '').trim();
+    if (!mp) {
+      return '';
+    }
+    const vals = group.values || [];
+    const pieces: string[] = [];
+    for (let v = 0; v < vals.length; v++) {
+      const fv = vals[v];
+      const rawVal = (fv.value || '').trim();
+      let operand: string | undefined;
+      if (rawVal && this._isLikelyRefinementTokenValue(rawVal)) {
+        operand = rawVal;
+      } else {
+        operand = this._extractPnpFilterDisplayValue(mp, fv).trim();
+      }
+      if (!operand) {
+        continue;
+      }
+      const esc = this._escapeFqlEqualsArg(operand);
+      pieces.push(`${mp}:equals("${esc}")`);
+    }
+    if (pieces.length === 0) {
+      return '';
+    }
+    if (pieces.length === 1) {
+      return pieces[0];
+    }
+    const innerOpLower = String(group.operator || 'or').toLowerCase();
+    const innerOp = innerOpLower === 'and' ? ' AND ' : ' OR ';
+    return `(${pieces.join(innerOp)})`;
+  }
+
+  /**
    * Map PnP URL `f` JSON to FQL (RefinementFilters) for refiners that behave like the Filters web part,
    * and KQL only for remaining refiner types. FileType + date refiners use FQL so totals align with Search Results.
+   *
+   * **How PnP Modern Search does it (conceptually):** each filter in the UI is a component bound to a
+   * **managed property** (or special template). The serialized `f` JSON carries `filterName` + `values`
+   * (often including SharePoint **refinement tokens** in `value`). The Search Results web part merges those
+   * into the search request as **refinement constraints**, not by maintaining a giant list of names in the URL.
+   * We mirror that by: (1) known templates → explicit FQL (FileType, dates, people→Author), (2) `Refinable*`
+   * → generic `ManagedProperty:equals(...)`, (3) optional token pass-through, (4) last resort KQL for odd types.
    */
   private _buildFilterPartsFromPnpFiltersJson(rawJson: string): { filterKql: string; refinementFql: string } {
     let parsed: IPnpFilterGroup[];
@@ -931,6 +1169,22 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
         const fg = this._buildFileTypeFqlGroup(group);
         if (fg) {
           fqlGroupClauses.push(fg);
+        }
+        continue;
+      }
+
+      if (this._isPersonAuthorRefinerFilterName(fn)) {
+        const ag = this._buildAuthorRefinerFqlGroup(group);
+        if (ag) {
+          fqlGroupClauses.push(ag);
+        }
+        continue;
+      }
+
+      if (this._isRefinableManagedPropertyName(prop)) {
+        const rg = this._buildManagedPropertyRefinerFqlGroup(group);
+        if (rg) {
+          fqlGroupClauses.push(rg);
         }
         continue;
       }
@@ -1607,22 +1861,24 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
       SelectProperties: selectProps,
       SortList: [{ Property: 'DocId', Direction: 0 }],
       SourceId: sourceId,
-      TrimDuplicates: false
+      TrimDuplicates: false,
+      /** Faster export: skip query rules / ranking extras the results UI may use. */
+      EnableQueryRules: false
     };
     if (refinementList.length > 0) {
       requestBody.RefinementFilters = refinementList;
     }
     const payload = { request: requestBody };
 
-    // Response JSON varies (`d.postquery` vs `postquery`, verbose vs nometadata). Try verbose first, then minimal.
+    // Prefer nometadata first: smaller payloads and faster JSON parse than verbose (major win on large RowLimit).
     let json: unknown;
-    let odataAttempt = 'verbose';
+    let odataAttempt = 'nometadata';
     try {
-      json = await this._postSearchPostquery(postUrl, payload, 'verbose');
+      json = await this._postSearchPostquery(postUrl, payload, 'nometadata');
     } catch (firstErr) {
       try {
-        odataAttempt = 'nometadata(fallback)';
-        json = await this._postSearchPostquery(postUrl, payload, 'nometadata');
+        odataAttempt = 'verbose(fallback)';
+        json = await this._postSearchPostquery(postUrl, payload, 'verbose');
       } catch {
         throw firstErr instanceof Error ? firstErr : new Error(String(firstErr));
       }
@@ -1645,13 +1901,13 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
     let found = this._findRelevantResultsBlock(json);
     if (!found.block || rowCountFromBlock(found.block) === 0) {
       try {
-        const json2 = await this._postSearchPostquery(postUrl, payload, 'nometadata');
+        const altMode = odataAttempt === 'nometadata' ? 'verbose' : 'nometadata';
+        const json2 = await this._postSearchPostquery(postUrl, payload, altMode);
         const found2 = this._findRelevantResultsBlock(json2);
         if (found2.block && (rowCountFromBlock(found2.block) > 0 || !found.block)) {
           json = json2;
           found = found2;
-          odataAttempt =
-            odataAttempt.indexOf('fallback') !== -1 ? 'verbose+nometadata' : 'verbose-then-nometadata';
+          odataAttempt = `${odataAttempt}+${altMode}`;
         }
       } catch {
         // keep first json
