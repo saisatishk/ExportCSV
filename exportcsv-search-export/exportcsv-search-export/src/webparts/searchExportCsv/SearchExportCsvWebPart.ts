@@ -14,8 +14,13 @@ import * as strings from 'SearchExportCsvWebPartStrings';
 const SEARCH_EXPORT_LOCATION_CHANGE = 'searchExportCsvLocationChange';
 
 /**
- * Rows per search request. Larger = fewer HTTP round-trips (faster bulk export).
- * Some tenants cap RowLimit (often 500); if postquery errors, try lowering this.
+ * Rows per SharePoint Search request (`RowLimit` / `RowsPerPage` on `/_api/search/postquery`).
+ *
+ * **Important:** The Search REST API caps results at **500 rows per request** (documented platform limit).
+ * Asking for 5000 (or any value above 500) does **not** increase rows per response — the service still returns
+ * at most 500 per call. Export continues paging with `IndexDocId` until all rows are retrieved.
+ *
+ * If Microsoft raises this limit in the future, increase the constant (still subject to tenant caps).
  */
 const EXPORT_PAGE_SIZE = 5000;
 
@@ -261,7 +266,8 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
 
       try {
         const columns = ['Title', 'Path', 'Author'];
-        const selectProperties = ['Title', 'Path', 'Author', 'DocId'].join(',');
+        const selectPropertiesList = ['Title', 'Path', 'Author', 'DocId'];
+        const selectProperties = selectPropertiesList.join(',');
         const pageSize = EXPORT_PAGE_SIZE;
         const maxRows = MAX_EXPORT_ROWS;
         let pageIndex = 0;
@@ -311,13 +317,17 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
             queryText: effectiveQuery,
             pageSize,
             selectProperties,
-            refinementFilters: refinementFiltersPayload
+            selectPropertiesList,
+            refinementFilters: refinementFiltersPayload,
+            enableGetFallbackWhenEmpty: lastDocId === undefined
           });
 
           if (totalRows === undefined && result.totalRows !== undefined) {
             totalRows = result.totalRows;
           }
-          lastDebug = result.debug;
+          if (this.properties.debugApi === true) {
+            lastDebug = result.debug;
+          }
 
           for (let i = 0; i < result.rows.length; i++) {
             const row = result.rows[i];
@@ -1132,17 +1142,7 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
     return `(${pieces.join(innerOp)})`;
   }
 
-  /**
-   * Map PnP URL `f` JSON to FQL (RefinementFilters) for refiners that behave like the Filters web part,
-   * and KQL only for remaining refiner types. FileType + date refiners use FQL so totals align with Search Results.
-   *
-   * **How PnP Modern Search does it (conceptually):** each filter in the UI is a component bound to a
-   * **managed property** (or special template). The serialized `f` JSON carries `filterName` + `values`
-   * (often including SharePoint **refinement tokens** in `value`). The Search Results web part merges those
-   * into the search request as **refinement constraints**, not by maintaining a giant list of names in the URL.
-   * We mirror that by: (1) known templates → explicit FQL (FileType, dates, people→Author), (2) `Refinable*`
-   * → generic `ManagedProperty:equals(...)`, (3) optional token pass-through, (4) last resort KQL for odd types.
-   */
+  /** Map PnP URL `f` JSON to FQL + KQL: templates (FileType, dates, Author, Refinable*) then fallback KQL. */
   private _buildFilterPartsFromPnpFiltersJson(rawJson: string): { filterKql: string; refinementFql: string } {
     let parsed: IPnpFilterGroup[];
     try {
@@ -1809,8 +1809,11 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
     queryText: string;
     pageSize: number;
     selectProperties: string;
+    selectPropertiesList?: string[];
     /** FQL refinement strings (e.g. `FileType:equals("docx")`) — same mechanism as PnP filter web part. */
     refinementFilters?: string[];
+    /** If false, skip GET `search/query` when postquery returns 0 rows (IndexDocId pages: empty = done). */
+    enableGetFallbackWhenEmpty?: boolean;
   }): Promise<{
     rows: Array<{ Title: string; Path: string; Author: string }>;
     lastDocId?: number;
@@ -1837,10 +1840,13 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
     const postUrl = `${webUrl}/_api/search/postquery`;
     const safeQuery = this._escapeKqlQuotes(params.queryText);
     const sourceId = this._formatSourceIdForSearchApi(params.sourceId);
-    const selectProps = params.selectProperties
-      .split(',')
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0);
+    const selectProps =
+      params.selectPropertiesList && params.selectPropertiesList.length > 0
+        ? params.selectPropertiesList
+        : params.selectProperties
+            .split(',')
+            .map((s) => s.trim())
+            .filter((s) => s.length > 0);
 
     const refinementList =
       params.refinementFilters !== undefined
@@ -1917,7 +1923,8 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
     let transport = `postquery:${odataAttempt}`;
     let ex = this._extractRowsFromSearchJson(json);
 
-    if (ex.rows.length === 0) {
+    const allowGetFallback = params.enableGetFallbackWhenEmpty !== false;
+    if (ex.rows.length === 0 && allowGetFallback) {
       try {
         const jsonGet = await this._getSearchQueryViaGet(
           webUrl,
