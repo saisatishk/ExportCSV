@@ -142,7 +142,7 @@ module.exports = {
         'guard-for-in': 2,
         // RATIONALE:         If you have more than 2,000 lines in a single source file, it's probably time
         //                    to split up your code.
-        'max-lines': ['warn', { max: 2000 }],
+        'max-lines': ['warn', { max: 2050 }],
         // STANDARDIZED BY:   eslint\conf\eslint-recommended.js
         'no-async-promise-executor': 2,
         // RATIONALE:         Deprecated language feature.

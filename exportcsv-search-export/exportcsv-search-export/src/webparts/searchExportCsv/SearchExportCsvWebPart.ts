@@ -10,6 +10,10 @@ import { SPHttpClient, SPHttpClientResponse } from '@microsoft/sp-http';
 import styles from './SearchExportCsvWebPart.module.scss';
 import * as strings from 'SearchExportCsvWebPartStrings';
 import { mergeSelectPropertiesForExport, parseExportColumnKeys } from './exportColumnsConfig';
+import {
+  buildExportButtonStyleAttr,
+  resolveButtonLabel
+} from './exportButtonAppearance';
 /** Dispatched when `history.pushState` / `replaceState` run (PnP Modern Search updates filters this way). */
 const SEARCH_EXPORT_LOCATION_CHANGE = 'searchExportCsvLocationChange';
 
@@ -39,11 +43,14 @@ function ensureHistoryPatchForSearchExport(): void {
 }
 
 export interface ISearchExportCsvWebPartProps {
-  /** Result source GUID (must match Search Results). Optional URL override: `sourceid`. */
   sourceId: string;
-  /** Comma-separated managed property names for CSV columns (e.g. Title,Path,Author,ModifiedOWSDATE). */
   exportColumns?: string;
-  /** Show full diagnostics on the page; when off, only Export (and Cancel while running) is shown. */
+  exportButtonText?: string;
+  cancelButtonText?: string;
+  exportButtonBackgroundColor?: string;
+  exportButtonTextColor?: string;
+  exportButtonBorderColor?: string;
+  exportButtonBorderRadius?: string;
   debugApi?: boolean;
 }
 
@@ -157,6 +164,9 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
 
     const showDebugUi = this.properties.debugApi === true;
     const sectionClass = `${styles.searchExportCsv}${showDebugUi ? '' : ` ${styles.searchExportCsvMinimal}`}`;
+    const exportBtnLabel = resolveButtonLabel(this.properties.exportButtonText, strings.ExportButtonLabel);
+    const cancelBtnLabel = resolveButtonLabel(this.properties.cancelButtonText, strings.CancelButtonLabel);
+    const exportBtnStyle = buildExportButtonStyleAttr(this.properties);
 
     this.domElement.innerHTML = `
       <section class="${sectionClass}">
@@ -190,10 +200,10 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
         }
 
         <div class="${styles.actions}">
-          <button type="button" class="${styles.button}" data-action="export">${strings.ExportButtonLabel}</button>
+          <button type="button" class="${styles.button}" data-action="export"${exportBtnStyle}>${this._escapeHtml(exportBtnLabel)}</button>
           ${
             showDebugUi
-              ? `<button type="button" class="${styles.button}" data-action="cancel" disabled>${strings.CancelButtonLabel}</button>`
+              ? `<button type="button" class="${styles.button}" data-action="cancel" disabled${exportBtnStyle}>${this._escapeHtml(cancelBtnLabel)}</button>`
               : ''
           }
         </div>
@@ -1988,6 +1998,35 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
                 }),
                 PropertyPaneToggle('debugApi', {
                   label: strings.DebugApiLabel
+                })
+              ]
+            },
+            {
+              groupName: strings.ButtonAppearanceGroupLabel,
+              groupFields: [
+                PropertyPaneTextField('exportButtonText', {
+                  label: strings.ExportButtonTextLabel,
+                  description: strings.ExportButtonTextDescription
+                }),
+                PropertyPaneTextField('cancelButtonText', {
+                  label: strings.CancelButtonTextLabel,
+                  description: strings.CancelButtonTextDescription
+                }),
+                PropertyPaneTextField('exportButtonBackgroundColor', {
+                  label: strings.ExportButtonBackgroundLabel,
+                  description: strings.ExportButtonColorFieldsDescription
+                }),
+                PropertyPaneTextField('exportButtonTextColor', {
+                  label: strings.ExportButtonTextColorLabel,
+                  description: strings.ExportButtonColorFieldsDescription
+                }),
+                PropertyPaneTextField('exportButtonBorderColor', {
+                  label: strings.ExportButtonBorderColorLabel,
+                  description: strings.ExportButtonColorFieldsDescription
+                }),
+                PropertyPaneTextField('exportButtonBorderRadius', {
+                  label: strings.ExportButtonBorderRadiusLabel,
+                  description: strings.ExportButtonRadiusDescription
                 })
               ]
             }
