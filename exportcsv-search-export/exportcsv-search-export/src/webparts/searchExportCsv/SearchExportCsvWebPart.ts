@@ -12,13 +12,21 @@ import * as strings from 'SearchExportCsvWebPartStrings';
 import { mergeSelectPropertiesForExport, parseExportColumnKeys } from './exportColumnsConfig';
 import {
   buildExportButtonStyleAttr,
-  resolveButtonLabel
+  resolveButtonLabel,
+  type IExportButtonAppearanceProps
 } from './exportButtonAppearance';
+import { buildExportButtonAppearanceGroupFields } from './exportButtonPropertyPane';
+import { formatCsvDateCell } from './exportCsvDateFormat';
+import {
+  getPreparedCellValueForCandidates,
+  getPreparedCellValueForColumn,
+  prepareSearchRowCells
+} from './searchExportCells';
 /** Dispatched when `history.pushState` / `replaceState` run (PnP Modern Search updates filters this way). */
 const SEARCH_EXPORT_LOCATION_CHANGE = 'searchExportCsvLocationChange';
 
-/** Search `RowLimit`/`RowsPerPage`; platform often caps ~500/response — export pages with IndexDocId. */
-const EXPORT_PAGE_SIZE = 5000;
+/** Search REST returns at most ~500 rows per request; larger RowLimit only adds server work. */
+const EXPORT_PAGE_SIZE = 500;
 
 /** Safety cap for total exported rows. */
 const MAX_EXPORT_ROWS = 200000;
@@ -42,17 +50,11 @@ function ensureHistoryPatchForSearchExport(): void {
   };
 }
 
-export interface ISearchExportCsvWebPartProps {
+export type ISearchExportCsvWebPartProps = {
   sourceId: string;
   exportColumns?: string;
-  exportButtonText?: string;
-  cancelButtonText?: string;
-  exportButtonBackgroundColor?: string;
-  exportButtonTextColor?: string;
-  exportButtonBorderColor?: string;
-  exportButtonBorderRadius?: string;
   debugApi?: boolean;
-}
+} & IExportButtonAppearanceProps;
 
 interface IPnpFilterValue {
   name?: string;
@@ -296,6 +298,9 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
 
         const csvLines: string[] = [];
         csvLines.push(columns.join(','));
+        const queryBaseTrim = queryBase.trim();
+        const hasBaseQuery = queryBaseTrim.length > 0;
+        let lastStatusAt = 0;
 
         while (shouldContinue) {
           if (this._isCancelled) {
@@ -304,12 +309,11 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
           }
 
           pageIndex++;
-          const hasBaseQuery = queryBase.trim().length > 0;
           const effectiveQuery =
             lastDocId === undefined
               ? queryBase
               : hasBaseQuery
-                ? (queryBase === '*' ? `IndexDocId>${lastDocId}` : `(${queryBase}) AND IndexDocId>${lastDocId}`)
+                ? (queryBaseTrim === '*' ? `IndexDocId>${lastDocId}` : `(${queryBase}) AND IndexDocId>${lastDocId}`)
                 : `IndexDocId>${lastDocId}`;
 
           const result = await this._fetchExportPage({
@@ -342,7 +346,11 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
           }
 
           exported += result.rows.length;
-          status.textContent = `${strings.ExportInProgress} ${exported}${totalRows ? ` / ${totalRows}` : ''} (${strings.PageLabel} ${pageIndex})`;
+          const nowMs = Date.now();
+          if (nowMs - lastStatusAt >= 400 || pageIndex === 1) {
+            lastStatusAt = nowMs;
+            status.textContent = `${strings.ExportInProgress} ${exported}${totalRows ? ` / ${totalRows}` : ''} (${strings.PageLabel} ${pageIndex})`;
+          }
 
           if (!result.lastDocId || result.rows.length === 0) {
             shouldContinue = false;
@@ -559,10 +567,8 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
     return score;
   }
 
-  /**
-   * Read keyword text from SharePoint / Fluent / PnP SearchBox-style fields (best-scoring visible input).
-   */
-  private _tryReadSharePointSearchBoxValue(): string {
+  /** Prefer page canvas / main so DOM walks skip suite chrome (faster on every render). */
+  private _getPageContentRoots(): Element[] {
     const roots: Element[] = [];
     const canvas = document.querySelector('#spPageCanvasContent');
     const pageContent = document.querySelector('[data-sp-placeholder="PageContent"]');
@@ -577,6 +583,14 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
       roots.push(main);
     }
     roots.push(document.body);
+    return roots;
+  }
+
+  /**
+   * Read keyword text from SharePoint / Fluent / PnP SearchBox-style fields (best-scoring visible input).
+   */
+  private _tryReadSharePointSearchBoxValue(): string {
+    const roots = this._getPageContentRoots();
 
     const selector =
       [
@@ -721,10 +735,12 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
    * When PnP does not sync refiners to the URL, infer FileType FQL from a visible File type control (heuristic).
    */
   private _tryRefinementFromVisibleFilterUi(): { refinementFql: string; summary: string } | undefined {
-    const hosts = document.querySelectorAll(
-      'div[role="combobox"], button[aria-haspopup="listbox"], div[aria-expanded]'
-    );
-    for (let i = 0; i < hosts.length; i++) {
+    const hostSelector =
+      'div[role="combobox"], button[aria-haspopup="listbox"], div[aria-expanded]';
+    const roots = this._getPageContentRoots();
+    for (let r = 0; r < roots.length; r++) {
+      const hosts = roots[r].querySelectorAll(hostSelector);
+      for (let i = 0; i < hosts.length; i++) {
       const host = hosts[i] as HTMLElement;
       const mount =
         host.closest('[class*="refinement"]') ||
@@ -756,8 +772,10 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
         };
       }
     }
+    }
 
-    const labels = document.querySelectorAll('label, span, div');
+    for (let r = 0; r < roots.length; r++) {
+    const labels = roots[r].querySelectorAll('label, span');
     for (let j = 0; j < labels.length; j++) {
       const el = labels[j] as HTMLElement;
       const t = (el.textContent || '').trim();
@@ -782,6 +800,7 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
           summary: `${strings.FiltersFromUiLabel}: ${r}`
         };
       }
+    }
     }
 
     return undefined;
@@ -1443,19 +1462,6 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
     return String(value);
   }
 
-  private _getCellValue(cells: Array<{ Key?: unknown; Value?: unknown }>, candidates: string[]): string | undefined {
-    const lowered = candidates.map((c) => c.toLowerCase());
-    for (let i = 0; i < cells.length; i++) {
-      const key = this._normalizeToString(cells[i]?.Key).toLowerCase();
-      for (let j = 0; j < lowered.length; j++) {
-        if (key.indexOf(lowered[j]) !== -1) {
-          return this._normalizeToString(cells[i]?.Value);
-        }
-      }
-    }
-    return undefined;
-  }
-
   /** Strip braces/quotes so Search API gets a plain GUID. */
   private _normalizeSourceId(raw: string): string {
     let s = (raw || '').trim();
@@ -1770,13 +1776,20 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
       return [];
     };
 
+    const exportColumnLower: string[] = [];
+    for (let c = 0; c < exportColumnKeys.length; c++) {
+      exportColumnLower.push(exportColumnKeys[c].toLowerCase());
+    }
+
     const mapped = rows.map((row) => {
       const rowObj = row as { Cells?: unknown };
       const cells = toCellsArray(rowObj?.Cells);
+      const prepared = prepareSearchRowCells(cells, (v: unknown) => this._normalizeToString(v));
       const out: Record<string, string> = {};
       for (let k = 0; k < exportColumnKeys.length; k++) {
         const name = exportColumnKeys[k];
-        out[name] = this._normalizeToString(this._getCellValue(cells, [name]) || '');
+        const cell = getPreparedCellValueForColumn(prepared, exportColumnLower[k]);
+        out[name] = formatCsvDateCell(name, cell);
       }
       return out;
     });
@@ -1784,7 +1797,8 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
     const lastRow = rows.length > 0 ? rows[rows.length - 1] : undefined;
     const lastRowObj = lastRow as { Cells?: unknown } | undefined;
     const lastCells = toCellsArray(lastRowObj?.Cells);
-    const lastDocIdRaw = this._getCellValue(lastCells, ['IndexDocId', 'indexdocid', 'DocId', 'docid']);
+    const lastPrepared = prepareSearchRowCells(lastCells, (v: unknown) => this._normalizeToString(v));
+    const lastDocIdRaw = getPreparedCellValueForCandidates(lastPrepared, ['IndexDocId', 'indexdocid', 'DocId', 'docid']);
     const lastDocId = lastDocIdRaw ? Number(lastDocIdRaw) : undefined;
 
     const totalRowsRaw = relevant?.TotalRows as unknown;
@@ -2003,32 +2017,7 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
             },
             {
               groupName: strings.ButtonAppearanceGroupLabel,
-              groupFields: [
-                PropertyPaneTextField('exportButtonText', {
-                  label: strings.ExportButtonTextLabel,
-                  description: strings.ExportButtonTextDescription
-                }),
-                PropertyPaneTextField('cancelButtonText', {
-                  label: strings.CancelButtonTextLabel,
-                  description: strings.CancelButtonTextDescription
-                }),
-                PropertyPaneTextField('exportButtonBackgroundColor', {
-                  label: strings.ExportButtonBackgroundLabel,
-                  description: strings.ExportButtonColorFieldsDescription
-                }),
-                PropertyPaneTextField('exportButtonTextColor', {
-                  label: strings.ExportButtonTextColorLabel,
-                  description: strings.ExportButtonColorFieldsDescription
-                }),
-                PropertyPaneTextField('exportButtonBorderColor', {
-                  label: strings.ExportButtonBorderColorLabel,
-                  description: strings.ExportButtonColorFieldsDescription
-                }),
-                PropertyPaneTextField('exportButtonBorderRadius', {
-                  label: strings.ExportButtonBorderRadiusLabel,
-                  description: strings.ExportButtonRadiusDescription
-                })
-              ]
+              groupFields: buildExportButtonAppearanceGroupFields(strings)
             }
           ]
         }

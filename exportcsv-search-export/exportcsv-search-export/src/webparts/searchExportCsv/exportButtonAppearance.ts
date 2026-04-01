@@ -16,12 +16,22 @@ export function sanitizeCssLength(raw: string | undefined): string | undefined {
   return /^\d+(\.\d+)?(px|rem|em|%)?$/.test(s) ? s : undefined;
 }
 
+export interface IExportButtonLabelProps {
+  exportButtonText?: string;
+  cancelButtonText?: string;
+}
+
 export interface IExportButtonStyleProps {
   exportButtonBackgroundColor?: string;
   exportButtonTextColor?: string;
   exportButtonBorderColor?: string;
   exportButtonBorderRadius?: string;
+  exportButtonFontSize?: string;
+  exportButtonWidth?: string;
+  exportButtonHeight?: string;
 }
+
+export type IExportButtonAppearanceProps = IExportButtonLabelProps & IExportButtonStyleProps;
 
 /** Safe ` style="..."` fragment from property pane (hex colors / length only). */
 export function buildExportButtonStyleAttr(style: IExportButtonStyleProps): string {
@@ -30,9 +40,15 @@ export function buildExportButtonStyleAttr(style: IExportButtonStyleProps): stri
   const fg = sanitizeCssColor(style.exportButtonTextColor);
   const bc = sanitizeCssColor(style.exportButtonBorderColor);
   const br = sanitizeCssLength(style.exportButtonBorderRadius);
+  const fs = sanitizeCssLength(style.exportButtonFontSize);
+  const w = sanitizeCssLength(style.exportButtonWidth);
+  const h = sanitizeCssLength(style.exportButtonHeight);
   if (bg) parts.push(`background:${bg}`);
   if (fg) parts.push(`color:${fg}`);
   if (bc) parts.push(`border-color:${bc}`);
   if (br) parts.push(`border-radius:${br}`);
+  if (fs) parts.push(`font-size:${fs}`);
+  if (w) parts.push(`width:${w}`);
+  if (h) parts.push(`height:${h}`);
   return parts.length > 0 ? ` style="${parts.join(';')}"` : '';
 }
