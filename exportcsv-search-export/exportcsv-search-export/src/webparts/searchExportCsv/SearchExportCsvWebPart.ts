@@ -138,6 +138,15 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
     }
   }
 
+  /** Logs to browser DevTools (F12); pass `Error` instances for stack traces. */
+  private _logSearchExportError(context: string, error: unknown): void {
+    if (error instanceof Error) {
+      console.error(`[SearchExportCsv] ${context}: ${error.message}`, error);
+    } else {
+      console.error(`[SearchExportCsv] ${context}:`, error);
+    }
+  }
+
   public render(): void {
     try {
     // Keywords: URL (`k`, `q`, …) → discovery → page Search box → `*` at export time (no property-pane KQL).
@@ -379,6 +388,7 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
           status.textContent = `${strings.ExportCompleted} ${exported}${totalRows !== undefined ? ` / ${totalRows}` : ''}`;
         }
       } catch (error) {
+        this._logSearchExportError('Export failed', error);
         const message = error instanceof Error ? error.message : String(error);
         showError(`${strings.ExportFailedPrefix} ${message}`);
       } finally {
@@ -720,6 +730,37 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
    * Some tenants encode refiner JSON under a key other than `f`, or only in the hash.
    * Scan all query values for an array payload that looks like PnP refiners.
    */
+  /**
+   * PnP often uses `f` or `f_<webPartGuid>` (e.g. `f_574443da-2e4b-4967-bbb5-f425b79bc2c8`) for the same JSON payload.
+   * Prefer `f`, then any `f_<guid>` key so export matches the Filters web part URL.
+   */
+  private _findPnpFQueryParamFromUrl(): { raw: string; key: string } | undefined {
+    const entries = this._collectAllUrlParamEntries();
+    const fGuidKey = /^f_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const candidates: Array<{ key: string; value: string; rank: number }> = [];
+    for (let i = 0; i < entries.length; i++) {
+      const key = entries[i].key.trim();
+      const value = (entries[i].value || '').trim();
+      if (!value) {
+        continue;
+      }
+      if (key === 'f') {
+        candidates.push({ key, value, rank: 0 });
+      } else if (fGuidKey.test(key)) {
+        candidates.push({ key, value, rank: 1 });
+      }
+    }
+    candidates.sort((a, b) => a.rank - b.rank);
+    for (let c = 0; c < candidates.length; c++) {
+      const raw = candidates[c].value;
+      const decoded = this._decodePnpRefinerChain(raw);
+      if (this._isPnpRefinerFilterJson(decoded)) {
+        return { raw, key: candidates[c].key };
+      }
+    }
+    return undefined;
+  }
+
   private _discoverPnpRefinersInUrlParams(): { raw: string; fromKey: string } | undefined {
     const entries = this._collectAllUrlParamEntries();
     for (let i = 0; i < entries.length; i++) {
@@ -1112,8 +1153,17 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
    * SharePoint often encodes refiner selections as opaque tokens in `values[].value` (e.g. leading `ǂ` + hex).
    * When present, use them in FQL equals — same data PnP sends back to search.
    */
+  /** PnP sometimes wraps the token in extra JSON string quotes (`"ǂǂ…"`). */
+  private _unwrapPnpRefinementTokenString(raw: string): string {
+    let t = (raw || '').trim();
+    if (t.length >= 2 && t.charAt(0) === '"' && t.charAt(t.length - 1) === '"') {
+      t = t.slice(1, -1).replace(/\\"/g, '"');
+    }
+    return t.trim();
+  }
+
   private _isLikelyRefinementTokenValue(raw: string): boolean {
-    const t = (raw || '').trim();
+    const t = this._unwrapPnpRefinementTokenString(raw);
     if (!t) {
       return false;
     }
@@ -1141,7 +1191,7 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
       const rawVal = (fv.value || '').trim();
       let operand: string | undefined;
       if (rawVal && this._isLikelyRefinementTokenValue(rawVal)) {
-        operand = rawVal;
+        operand = this._unwrapPnpRefinementTokenString(rawVal);
       } else {
         operand = this._extractPnpFilterDisplayValue(mp, fv).trim();
       }
@@ -1280,10 +1330,16 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
       raw = named.trim();
       summaryPrefix = `${strings.FromUrlLabel} (${paramKey})`;
     } else {
-      const discovered = this._discoverPnpRefinersInUrlParams();
-      if (discovered) {
-        raw = discovered.raw.trim();
-        summaryPrefix = `${strings.FiltersDiscoveredInUrlLabel} (${discovered.fromKey})`;
+      const fScoped = this._findPnpFQueryParamFromUrl();
+      if (fScoped) {
+        raw = fScoped.raw.trim();
+        summaryPrefix = `${strings.FromUrlLabel} (${fScoped.key})`;
+      } else {
+        const discovered = this._discoverPnpRefinersInUrlParams();
+        if (discovered) {
+          raw = discovered.raw.trim();
+          summaryPrefix = `${strings.FiltersDiscoveredInUrlLabel} (${discovered.fromKey})`;
+        }
       }
     }
 
