@@ -147,6 +147,65 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
     }
   }
 
+  /** Zero rows is not an exception — use this so users still see DevTools hints. */
+  private _logSearchExportWarn(message: string, details?: Record<string, unknown>): void {
+    if (details) {
+      console.warn(`[SearchExportCsv] ${message}`, details);
+    } else {
+      console.warn(`[SearchExportCsv] ${message}`);
+    }
+  }
+
+  /**
+   * When the first export page has no rows, logs structured diagnostics (not only on thrown errors).
+   * Turn on the web part property "debug API" for the same details in the status line.
+   */
+  private _logSearchExportZeroRowsFirstPage(
+    debug: {
+      sentQueryText: string;
+      sentRefinementFilters: string;
+      sentSourceId: string;
+      extractedRows: number;
+      totalRowsRawType: string;
+      totalRowsRawValue: string;
+      tableRowsIsArray: boolean;
+      tableRowsHasResultsArray: boolean;
+      tableRowsResultsLength?: number;
+      primaryPath: string;
+      relevantDefined: boolean;
+      relevantHow: string;
+      odataAttempt: string;
+      jsonTopKeys: string;
+      transport: string;
+    },
+    ctx: {
+      effectiveQuery: string;
+      refinementFilters?: string[];
+      sourceId: string;
+      pageUrl: string;
+    }
+  ): void {
+    const trParsed = parseInt(String(debug.totalRowsRawValue).trim(), 10);
+    const apiReportsHits = !isNaN(trParsed) && trParsed > 0;
+    let hint: string;
+    if (apiReportsHits && debug.extractedRows === 0) {
+      hint =
+        'Search returned TotalRows > 0 but no table rows were mapped — response shape may differ on this tenant; check jsonKeys / primaryPath.';
+    } else if ((debug.sentRefinementFilters || '').trim()) {
+      hint =
+        'With refiners: confirm the Result Source ID matches the PnP Search Results web part. Mismatch often yields 0 rows here while the other web part still shows hits.';
+    } else {
+      hint = 'Confirm query text and Result Source ID match the Search Results web part.';
+    }
+    this._logSearchExportWarn(`Export first page returned 0 rows. ${hint}`, {
+      debug,
+      effectiveQuery: ctx.effectiveQuery,
+      refinementFilters: ctx.refinementFilters,
+      sourceId: ctx.sourceId,
+      pageUrl: ctx.pageUrl
+    });
+  }
+
   public render(): void {
     try {
     // Keywords: URL (`k`, `q`, …) → discovery → page Search box → `*` at export time (no property-pane KQL).
@@ -342,6 +401,14 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
           }
           if (this.properties.debugApi === true) {
             lastDebug = result.debug;
+          }
+          if (pageIndex === 1 && result.rows.length === 0) {
+            this._logSearchExportZeroRowsFirstPage(result.debug, {
+              effectiveQuery,
+              refinementFilters: refinementFiltersPayload,
+              sourceId,
+              pageUrl: typeof window !== 'undefined' ? window.location.href : ''
+            });
           }
 
           for (let i = 0; i < result.rows.length; i++) {
@@ -1153,12 +1220,18 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
    * SharePoint often encodes refiner selections as opaque tokens in `values[].value` (e.g. leading `ǂ` + hex).
    * When present, use them in FQL equals — same data PnP sends back to search.
    */
-  /** PnP sometimes wraps the token in extra JSON string quotes (`"ǂǂ…"`). */
+  /** PnP sometimes wraps the token in extra JSON string quotes (`"ǂǂ…"` or leading `"` only). */
   private _unwrapPnpRefinementTokenString(raw: string): string {
     let t = (raw || '').trim();
-    if (t.length >= 2 && t.charAt(0) === '"' && t.charAt(t.length - 1) === '"') {
-      t = t.slice(1, -1).replace(/\\"/g, '"');
+    for (let i = 0; i < 3; i++) {
+      if (t.charAt(0) === '"') {
+        t = t.slice(1).trim();
+      }
+      if (t.charAt(t.length - 1) === '"') {
+        t = t.slice(0, -1).trim();
+      }
     }
+    t = t.replace(/\\"/g, '"');
     return t.trim();
   }
 
@@ -1178,6 +1251,8 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
 
   /**
    * Generic FQL for any managed property that matches `Refinable*` — covers most custom PnP filter fields.
+   * SharePoint RefinementFilters expect `RefinerName:"RefinementToken"` (KeywordQuery / REST), not
+   * `RefinerName:equals("…")` — the latter can return TotalRows=0 while the PnP UI still shows hits.
    */
   private _buildManagedPropertyRefinerFqlGroup(group: IPnpFilterGroup): string {
     const mp = (group.filterName || '').trim();
@@ -1199,7 +1274,7 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
         continue;
       }
       const esc = this._escapeFqlEqualsArg(operand);
-      pieces.push(`${mp}:equals("${esc}")`);
+      pieces.push(`${mp}:"${esc}"`);
     }
     if (pieces.length === 0) {
       return '';
@@ -2000,6 +2075,50 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
     const colKeys = params.exportColumnKeys && params.exportColumnKeys.length > 0 ? params.exportColumnKeys : ['Title', 'Path', 'Author'];
     let transport = `postquery:${odataAttempt}`;
     let ex = this._extractRowsFromSearchJson(json, colKeys);
+
+    // Some tenants accept RefinementFilters as a single FQL string; array form can yield 0 rows.
+    if (ex.rows.length === 0 && refinementList.length === 1) {
+      const requestBodyStr: Record<string, unknown> = { ...requestBody, RefinementFilters: refinementList[0] };
+      const payloadStr = { request: requestBodyStr };
+      try {
+        let jsonStr: unknown;
+        try {
+          jsonStr = await this._postSearchPostquery(postUrl, payloadStr, 'nometadata');
+        } catch {
+          jsonStr = await this._postSearchPostquery(postUrl, payloadStr, 'verbose');
+        }
+        const exStr = this._extractRowsFromSearchJson(jsonStr, colKeys);
+        if (exStr.rows.length > 0) {
+          json = jsonStr;
+          ex = exStr;
+          transport = `${transport};refinementFiltersAsString`;
+        }
+      } catch {
+        // keep first result
+      }
+    }
+
+    // With refiners only, some tenants return TotalRows=0 when Querytext is `*`; empty matches "all" + refinement.
+    if (ex.rows.length === 0 && refinementList.length > 0 && (params.queryText || '').trim() === '*') {
+      const requestBodyNoText: Record<string, unknown> = { ...requestBody, Querytext: '' };
+      const payloadNoText = { request: requestBodyNoText };
+      try {
+        let jsonNoText: unknown;
+        try {
+          jsonNoText = await this._postSearchPostquery(postUrl, payloadNoText, 'nometadata');
+        } catch {
+          jsonNoText = await this._postSearchPostquery(postUrl, payloadNoText, 'verbose');
+        }
+        const exNoText = this._extractRowsFromSearchJson(jsonNoText, colKeys);
+        if (exNoText.rows.length > 0) {
+          json = jsonNoText;
+          ex = exNoText;
+          transport = `${transport};querytextEmptyWithRefiners`;
+        }
+      } catch {
+        // keep prior extraction
+      }
+    }
 
     const allowGetFallback = params.enableGetFallbackWhenEmpty !== false;
     if (ex.rows.length === 0 && allowGetFallback) {
