@@ -920,6 +920,19 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
       .replace(/"/g, '\\"');
   }
 
+  /**
+   * RefinementFilters use FAST FQL. SQL-style `(a OR b)` is invalid; use `or(a, b)` / `and(a, b)`.
+   */
+  private _combineFqlRefinementParts(parts: string[], join: 'or' | 'and'): string {
+    if (parts.length === 0) {
+      return '';
+    }
+    if (parts.length === 1) {
+      return parts[0];
+    }
+    return `${join}(${parts.join(', ')})`;
+  }
+
   private _extractPnpFilterDisplayValue(_filterName: string, fv: IPnpFilterValue): string {
     let display = (fv.name || '').trim();
     if (!display && fv.value) {
@@ -1149,8 +1162,7 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
       return pieces[0];
     }
     const innerOpLower = String(group.operator || 'or').toLowerCase();
-    const innerOp = innerOpLower === 'and' ? ' AND ' : ' OR ';
-    return `(${pieces.join(innerOp)})`;
+    return this._combineFqlRefinementParts(pieces, innerOpLower === 'and' ? 'and' : 'or');
   }
 
   /**
@@ -1176,8 +1188,7 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
       return pieces[0];
     }
     const innerOpLower = String(group.operator || 'or').toLowerCase();
-    const innerOp = innerOpLower === 'and' ? ' AND ' : ' OR ';
-    return `(${pieces.join(innerOp)})`;
+    return this._combineFqlRefinementParts(pieces, innerOpLower === 'and' ? 'and' : 'or');
   }
 
   /** filterName values PnP uses for “people” refiners (checkbox / user picker). */
@@ -1283,8 +1294,7 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
       return pieces[0];
     }
     const innerOpLower = String(group.operator || 'or').toLowerCase();
-    const innerOp = innerOpLower === 'and' ? ' AND ' : ' OR ';
-    return `(${pieces.join(innerOp)})`;
+    return this._combineFqlRefinementParts(pieces, innerOpLower === 'and' ? 'and' : 'or');
   }
 
   /** Map PnP URL `f` JSON to FQL + KQL: templates (FileType, dates, Author, Refinable*) then fallback KQL. */
