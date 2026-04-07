@@ -3,6 +3,8 @@ declare interface ISearchExportCsvWebPartStrings {
   SourceIdLabel: string;
   ExportColumnsLabel: string;
   ExportColumnsDescription: string;
+  CsvDateColumnsLabel: string;
+  CsvDateColumnsDescription: string;
   ButtonAppearanceGroupLabel: string;
   ExportButtonTextLabel: string;
   ExportButtonTextDescription: string;

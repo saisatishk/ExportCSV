@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- URL filter + search REST + export are intentionally in one web part */
 import { Version } from '@microsoft/sp-core-library';
 import {
   type IPropertyPaneConfiguration,
@@ -53,6 +54,8 @@ function ensureHistoryPatchForSearchExport(): void {
 export type ISearchExportCsvWebPartProps = {
   sourceId: string;
   exportColumns?: string;
+  /** Comma-separated managed property names to always format as dates in CSV (optional). */
+  csvDateColumns?: string;
   debugApi?: boolean;
 } & IExportButtonAppearanceProps;
 
@@ -136,6 +139,23 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
     } catch {
       return String(value);
     }
+  }
+
+  /** Property pane `csvDateColumns` — comma-separated managed property names for CSV date formatting. */
+  private _getCsvExplicitDateColumns(): Set<string> | undefined {
+    const raw = (this.properties.csvDateColumns || '').trim();
+    if (!raw) {
+      return undefined;
+    }
+    const set = new Set<string>();
+    const parts = raw.split(',');
+    for (let i = 0; i < parts.length; i++) {
+      const t = parts[i].trim().toLowerCase();
+      if (t) {
+        set.add(t);
+      }
+    }
+    return set.size > 0 ? set : undefined;
   }
 
   /** Logs to browser DevTools (F12); pass `Error` instances for stack traces. */
@@ -1046,14 +1066,10 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
     return pick(parts[0], parts[1]) ?? pick(parts[1], parts[0]);
   }
 
-  /**
-   * PnP date refiners belong in RefinementFilters (FQL), not KQL Querytext — same path as FileType in the refiners web part.
-   * Uses RANGE / equals patterns from MS FQL reference.
-   */
-  private _buildDateRefinerFqlGroup(group: IPnpFilterGroup, managedProperty: string): string {
+  /** ISO timestamps from PnP `f` JSON for date refiners (values[].value + operator). */
+  private _collectPnpDateFilterValues(group: IPnpFilterGroup): Array<{ op: number; iso: string }> {
     const vals = group.values || [];
-    type Dated = { op: number; iso: string };
-    const dated: Dated[] = [];
+    const dated: Array<{ op: number; iso: string }> = [];
     for (let i = 0; i < vals.length; i++) {
       const raw = (vals[i].value || '').trim();
       if (!raw || !this._looksLikeIsoDateTimeForKql(raw)) {
@@ -1063,9 +1079,20 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
       const op = coerced !== undefined ? coerced : PnpFilterComparisonOperator.Eq;
       dated.push({ op, iso: raw });
     }
+    return dated;
+  }
+
+  /**
+   * PnP date refiners belong in RefinementFilters (FQL), not KQL Querytext — same path as FileType in the refiners web part.
+   * Uses RANGE / equals patterns from MS FQL reference.
+   */
+  private _buildDateRefinerFqlGroup(group: IPnpFilterGroup, managedProperty: string): string {
+    const dated = this._collectPnpDateFilterValues(group);
     if (dated.length === 0) {
       return '';
     }
+
+    type Dated = { op: number; iso: string };
 
     const innerJoin = String(group.operator || 'or').toLowerCase() === 'and' ? 'and' : 'or';
 
@@ -1096,6 +1123,27 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
         }
         return `${managedProperty}:range(${this._fqlDatetimeOperandFromIso(geIso)}, ${this._fqlDatetimeOperandFromIso(
           leIso
+        )}, from="GE", to="LE")`;
+      }
+    }
+
+    /**
+     * PnP "between" often sends two bounds both as Eq — `and(prop:"d1", prop:"d2")` would match nothing.
+     * Fold into one inclusive range.
+     */
+    if (dated.length === 2) {
+      const a = dated[0];
+      const b = dated[1];
+      if (a.op === PnpFilterComparisonOperator.Eq && b.op === PnpFilterComparisonOperator.Eq) {
+        let lo = a.iso;
+        let hi = b.iso;
+        if (this._normalizeIsoForFqlDateTime(lo) > this._normalizeIsoForFqlDateTime(hi)) {
+          const t = lo;
+          lo = hi;
+          hi = t;
+        }
+        return `${managedProperty}:range(${this._fqlDatetimeOperandFromIso(lo)}, ${this._fqlDatetimeOperandFromIso(
+          hi
         )}, from="GE", to="LE")`;
       }
     }
@@ -1138,6 +1186,103 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
       return mergedHalf;
     }
     return innerJoin === 'and' ? `and(${parts.join(', ')})` : `or(${parts.join(', ')})`;
+  }
+
+  /**
+   * KQL for date managed properties (e.g. ModifiedOWSDATE) when not using RefinementFilters FQL.
+   * Same range rules as `_buildDateRefinerFqlGroup` — two Eq bounds → `>= lo AND <= hi`.
+   */
+  private _buildDateKqlFilterGroup(group: IPnpFilterGroup): string {
+    const managedProperty = (group.filterName || '').trim();
+    if (!managedProperty) {
+      return '';
+    }
+    const dated = this._collectPnpDateFilterValues(group);
+    if (dated.length === 0) {
+      return '';
+    }
+
+    type Dated = { op: number; iso: string };
+    const innerJoin = String(group.operator || 'or').toLowerCase() === 'and' ? 'and' : 'or';
+
+    if (dated.length === 2) {
+      let geD: Dated | undefined;
+      let leD: Dated | undefined;
+      for (let d = 0; d < dated.length; d++) {
+        const item = dated[d];
+        if (item.op === PnpFilterComparisonOperator.Geq) {
+          geD = item;
+        }
+        if (item.op === PnpFilterComparisonOperator.Leq) {
+          leD = item;
+        }
+      }
+      if (geD && leD) {
+        let geIso = geD.iso;
+        let leIso = leD.iso;
+        if (this._normalizeIsoForFqlDateTime(geIso) > this._normalizeIsoForFqlDateTime(leIso)) {
+          const swap = geIso;
+          geIso = leIso;
+          leIso = swap;
+        }
+        const litGe = this._isoValueToKqlDateTimeLiteral(geIso);
+        const litLe = this._isoValueToKqlDateTimeLiteral(leIso);
+        return `${managedProperty}>=${litGe} AND ${managedProperty}<=${litLe}`;
+      }
+    }
+
+    if (dated.length === 2) {
+      const a = dated[0];
+      const b = dated[1];
+      if (a.op === PnpFilterComparisonOperator.Eq && b.op === PnpFilterComparisonOperator.Eq) {
+        let lo = a.iso;
+        let hi = b.iso;
+        if (this._normalizeIsoForFqlDateTime(lo) > this._normalizeIsoForFqlDateTime(hi)) {
+          const t = lo;
+          lo = hi;
+          hi = t;
+        }
+        const litLo = this._isoValueToKqlDateTimeLiteral(lo);
+        const litHi = this._isoValueToKqlDateTimeLiteral(hi);
+        return `${managedProperty}>=${litLo} AND ${managedProperty}<=${litHi}`;
+      }
+    }
+
+    const parts: string[] = [];
+    for (let j = 0; j < dated.length; j++) {
+      const { op, iso } = dated[j];
+      const lit = this._isoValueToKqlDateTimeLiteral(iso);
+      switch (op) {
+        case PnpFilterComparisonOperator.Eq:
+          parts.push(`${managedProperty}=${lit}`);
+          break;
+        case PnpFilterComparisonOperator.Neq:
+          parts.push(`NOT (${managedProperty}=${lit})`);
+          break;
+        case PnpFilterComparisonOperator.Gt:
+          parts.push(`${managedProperty}>${lit}`);
+          break;
+        case PnpFilterComparisonOperator.Lt:
+          parts.push(`${managedProperty}<${lit}`);
+          break;
+        case PnpFilterComparisonOperator.Geq:
+          parts.push(`${managedProperty}>=${lit}`);
+          break;
+        case PnpFilterComparisonOperator.Leq:
+          parts.push(`${managedProperty}<=${lit}`);
+          break;
+        default:
+          parts.push(`${managedProperty}=${lit}`);
+      }
+    }
+    if (parts.length === 0) {
+      return '';
+    }
+    if (parts.length === 1) {
+      return parts[0];
+    }
+    const joiner = innerJoin === 'and' ? ' AND ' : ' OR ';
+    return `(${parts.join(joiner)})`;
   }
 
   /** Build SharePoint FQL for a PnP FileType / FileExtension refiner group (matches search UI refiners). */
@@ -1225,6 +1370,28 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
    */
   private _isRefinableManagedPropertyName(name: string): boolean {
     return /^Refinable(String|Date|Int|Decimal|Double|Guid)/i.test((name || '').trim());
+  }
+
+  /** `RefinableDate01` must use FQL `range()`, not `RefinableDate01:"iso"` × N (unsatisfiable AND). */
+  private _isRefinableDatePropertyName(name: string): boolean {
+    return /^RefinableDate/i.test((name || '').trim());
+  }
+
+  /**
+   * KQL path for *OWSDATE* / *datetime* managed properties — needs `>=` / `<=`, not two `prop:"…"` ANDed.
+   */
+  private _isKqlDateManagedPropertyName(prop: string): boolean {
+    const lower = (prop || '').trim().toLowerCase();
+    if (!lower) {
+      return false;
+    }
+    if (lower.length >= 7 && lower.substring(lower.length - 7) === 'owsdate') {
+      return true;
+    }
+    if (lower.indexOf('datetime') >= 0) {
+      return true;
+    }
+    return false;
   }
 
   /**
@@ -1336,6 +1503,19 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
         continue;
       }
 
+      if (this._isRefinableDatePropertyName(prop)) {
+        const dg = this._buildDateRefinerFqlGroup(group, prop);
+        if (dg) {
+          fqlGroupClauses.push(dg);
+          continue;
+        }
+        const rg = this._buildManagedPropertyRefinerFqlGroup(group);
+        if (rg) {
+          fqlGroupClauses.push(rg);
+        }
+        continue;
+      }
+
       if (this._isRefinableManagedPropertyName(prop)) {
         const rg = this._buildManagedPropertyRefinerFqlGroup(group);
         if (rg) {
@@ -1361,6 +1541,14 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
           fqlGroupClauses.push(dg);
         }
         continue;
+      }
+
+      if (this._isKqlDateManagedPropertyName(prop)) {
+        const kg = this._buildDateKqlFilterGroup(group);
+        if (kg) {
+          kqlGroupClauses.push(kg);
+          continue;
+        }
       }
 
       const vals = group.values || [];
@@ -1922,6 +2110,8 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
       exportColumnLower.push(exportColumnKeys[c].toLowerCase());
     }
 
+    const csvDateHints = this._getCsvExplicitDateColumns();
+
     const mapped = rows.map((row) => {
       const rowObj = row as { Cells?: unknown };
       const cells = toCellsArray(rowObj?.Cells);
@@ -1930,7 +2120,7 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
       for (let k = 0; k < exportColumnKeys.length; k++) {
         const name = exportColumnKeys[k];
         const cell = getPreparedCellValueForColumn(prepared, exportColumnLower[k]);
-        out[name] = formatCsvDateCell(name, cell);
+        out[name] = formatCsvDateCell(name, cell, csvDateHints);
       }
       return out;
     });
@@ -2193,6 +2383,11 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
                 PropertyPaneTextField('exportColumns', {
                   label: strings.ExportColumnsLabel,
                   description: strings.ExportColumnsDescription,
+                  multiline: true
+                }),
+                PropertyPaneTextField('csvDateColumns', {
+                  label: strings.CsvDateColumnsLabel,
+                  description: strings.CsvDateColumnsDescription,
                   multiline: true
                 }),
                 PropertyPaneToggle('debugApi', {

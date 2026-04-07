@@ -4,6 +4,8 @@ define([], function() {
     "SourceIdLabel": "Result source ID",
     "ExportColumnsLabel": "CSV columns (managed properties)",
     "ExportColumnsDescription": "Comma-separated names, e.g. Title,Path,Author,ModifiedOWSDATE,FileType. IndexDocId is added automatically for paging if omitted. Empty uses Title,Path,Author.",
+    "CsvDateColumnsLabel": "CSV date columns (optional)",
+    "CsvDateColumnsDescription": "Comma-separated managed property names to format as MM/dd/yyyy in the CSV (e.g. ModifiedOWSDATE,RefinableDate01). Leave blank to keep raw values. No automatic name-based detection — list each date column here.",
     "ButtonAppearanceGroupLabel": "Export button appearance",
     "ExportButtonTextLabel": "Export button text",
     "ExportButtonTextDescription": "Leave blank to use the default label.",
