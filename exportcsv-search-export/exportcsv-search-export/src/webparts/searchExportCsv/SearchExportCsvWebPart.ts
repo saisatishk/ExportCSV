@@ -1395,6 +1395,47 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
   }
 
   /**
+   * Managed property name for FQL date `range()` — maps PnP filterName (created/modified/…) to search schema names.
+   */
+  private _resolveDateRefinerManagedPropertyName(prop: string): string {
+    const fn = (prop || '').trim().toLowerCase();
+    if (fn === 'lastmodifiedtime' || fn === 'lastmodified' || fn === 'modified') {
+      return 'LastModifiedTime';
+    }
+    if (fn === 'created') {
+      return 'Created';
+    }
+    return (prop || '').trim();
+  }
+
+  /**
+   * Date refiners: property pane `csvDateColumns` (same names as CSV date formatting) plus built-in patterns
+   * (RefinableDate*, created/last modified, *owsdate*, *datetime*).
+   */
+  private _shouldTreatFilterAsDateRefiner(prop: string): boolean {
+    const key = prop.trim().toLowerCase();
+    const hints = this._getCsvExplicitDateColumns();
+    if (hints && hints.has(key)) {
+      return true;
+    }
+    if (this._isRefinableDatePropertyName(prop)) {
+      return true;
+    }
+    if (
+      key === 'created' ||
+      key === 'lastmodifiedtime' ||
+      key === 'lastmodified' ||
+      key === 'modified'
+    ) {
+      return true;
+    }
+    if (this._isKqlDateManagedPropertyName(prop)) {
+      return true;
+    }
+    return false;
+  }
+
+  /**
    * SharePoint often encodes refiner selections as opaque tokens in `values[].value` (e.g. leading `ǂ` + hex).
    * When present, use them in FQL equals — same data PnP sends back to search.
    */
@@ -1503,17 +1544,25 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
         continue;
       }
 
-      if (this._isRefinableDatePropertyName(prop)) {
-        const dg = this._buildDateRefinerFqlGroup(group, prop);
+      if (this._shouldTreatFilterAsDateRefiner(prop)) {
+        const managedForDate = this._resolveDateRefinerManagedPropertyName(prop);
+        const dg = this._buildDateRefinerFqlGroup(group, managedForDate);
         if (dg) {
           fqlGroupClauses.push(dg);
           continue;
         }
-        const rg = this._buildManagedPropertyRefinerFqlGroup(group);
-        if (rg) {
-          fqlGroupClauses.push(rg);
+        if (this._isRefinableManagedPropertyName(prop)) {
+          const rg = this._buildManagedPropertyRefinerFqlGroup(group);
+          if (rg) {
+            fqlGroupClauses.push(rg);
+          }
+          continue;
         }
-        continue;
+        const kg = this._buildDateKqlFilterGroup(group);
+        if (kg) {
+          kqlGroupClauses.push(kg);
+          continue;
+        }
       }
 
       if (this._isRefinableManagedPropertyName(prop)) {
@@ -1522,33 +1571,6 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
           fqlGroupClauses.push(rg);
         }
         continue;
-      }
-
-      if (
-        fn === 'created' ||
-        fn === 'lastmodifiedtime' ||
-        fn === 'lastmodified' ||
-        fn === 'modified'
-      ) {
-        let managed = prop;
-        if (fn === 'lastmodifiedtime' || fn === 'lastmodified' || fn === 'modified') {
-          managed = 'LastModifiedTime';
-        } else {
-          managed = 'Created';
-        }
-        const dg = this._buildDateRefinerFqlGroup(group, managed);
-        if (dg) {
-          fqlGroupClauses.push(dg);
-        }
-        continue;
-      }
-
-      if (this._isKqlDateManagedPropertyName(prop)) {
-        const kg = this._buildDateKqlFilterGroup(group);
-        if (kg) {
-          kqlGroupClauses.push(kg);
-          continue;
-        }
       }
 
       const vals = group.values || [];
