@@ -5,6 +5,10 @@ declare interface ISearchExportCsvWebPartStrings {
   ExportColumnsDescription: string;
   CsvDateColumnsLabel: string;
   CsvDateColumnsDescription: string;
+  UseSearchUrlForFiltersLabel: string;
+  SearchUrlLabel: string;
+  SearchUrlDescription: string;
+  SearchUrlPropertyOriginLabel: string;
   ButtonAppearanceGroupLabel: string;
   ExportButtonTextLabel: string;
   ExportButtonTextDescription: string;

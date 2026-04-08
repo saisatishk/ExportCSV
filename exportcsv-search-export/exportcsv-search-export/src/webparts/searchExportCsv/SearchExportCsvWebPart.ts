@@ -56,6 +56,10 @@ export type ISearchExportCsvWebPartProps = {
   exportColumns?: string;
   /** Comma-separated managed property names to always format as dates in CSV (optional). */
   csvDateColumns?: string;
+  /** When true, read `k`, `q`, `f`, … from `searchUrl` instead of the current page URL. */
+  useSearchUrlForFilters?: boolean;
+  /** Page URL whose query/hash contains the PnP search filters (copy from browser on the search page). */
+  searchUrl?: string;
   debugApi?: boolean;
 } & IExportButtonAppearanceProps;
 
@@ -156,6 +160,35 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
       }
     }
     return set.size > 0 ? set : undefined;
+  }
+
+  /** Property pane: use `searchUrl` for reading filters/keywords instead of `window.location`. */
+  private _useSearchUrlForFiltersActive(): boolean {
+    if (this.properties.useSearchUrlForFilters !== true) {
+      return false;
+    }
+    return (this.properties.searchUrl || '').trim().length > 0;
+  }
+
+  /**
+   * Base URL used for `f`, `k`, `q`, hash query, etc. When the Search URL override is on, parses `searchUrl`
+   * (relative URLs resolve against the current site origin).
+   */
+  private _getEffectiveFilterUrlHref(): string {
+    if (this._useSearchUrlForFiltersActive()) {
+      const raw = (this.properties.searchUrl || '').trim();
+      try {
+        return new URL(raw, typeof window !== 'undefined' ? window.location.origin : 'https://localhost').href;
+      } catch {
+        return typeof window !== 'undefined' ? window.location.href : '';
+      }
+    }
+    return typeof window !== 'undefined' ? window.location.href : '';
+  }
+
+  /** Label for URL-derived query/filter origins: current page vs Search URL property. */
+  private _filterUrlSourceLabelForSummary(): string {
+    return this._useSearchUrlForFiltersActive() ? strings.SearchUrlPropertyOriginLabel : strings.FromUrlLabel;
   }
 
   /** Logs to browser DevTools (F12); pass `Error` instances for stack traces. */
@@ -320,8 +353,8 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
     };
 
     exportButton.onclick = async (): Promise<void> => {
-      // Always read the latest URL + properties at click time. PnP updates `f` via history.replaceState
-      // without reloading the page, so values captured during the last render() would stay stale otherwise.
+      // Always read the latest properties at click time. When "Search URL" is off, PnP may update `f` via
+      // history.replaceState without reload — read URL then too. When Search URL is on, `k`/`f`/… come from that property.
       const liveQuery = this._resolveSearchQueryForExport();
       const liveSource = this._resolveValue(this.properties.sourceId, undefined, 'sourceid');
       const liveFilterParts = this._getUrlFilterParts();
@@ -427,7 +460,7 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
               effectiveQuery,
               refinementFilters: refinementFiltersPayload,
               sourceId,
-              pageUrl: typeof window !== 'undefined' ? window.location.href : ''
+              pageUrl: typeof window !== 'undefined' ? this._getEffectiveFilterUrlHref() : ''
             });
           }
 
@@ -507,11 +540,11 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
     const key = (name || '').trim();
     if (!key) return '';
 
-    const pageUrl = new URL(window.location.href);
+    const pageUrl = new URL(this._getEffectiveFilterUrlHref());
     const fromSearch = (pageUrl.searchParams.get(key) || '').trim();
     if (fromSearch) return fromSearch;
 
-    const rawHash = (window.location.hash || '').replace(/^#/, '');
+    const rawHash = (pageUrl.hash || '').replace(/^#/, '');
     if (!rawHash || rawHash.indexOf('=') === -1) return '';
 
     try {
@@ -722,11 +755,12 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
 
   /** Search keywords: URL (`k`, `q`, …) → loose URL scan → visible SearchBox. Empty → export uses `*`. */
   private _resolveSearchQueryForExport(): { value: string; origin: string } {
+    const originTag = this._filterUrlSourceLabelForSummary();
     const keys = this._searchQueryUrlParamCandidates();
     for (let k = 0; k < keys.length; k++) {
       const fromUrl = this._getUrlParam(keys[k]);
       if (fromUrl) {
-        return { value: fromUrl, origin: `${strings.FromUrlLabel} (${keys[k]})` };
+        return { value: fromUrl, origin: `${originTag} (${keys[k]})` };
       }
     }
 
@@ -734,13 +768,15 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
     if (discovered) {
       return {
         value: discovered.value,
-        origin: `${strings.FromUrlLabel} (${discovered.key})`
+        origin: `${originTag} (${discovered.key})`
       };
     }
 
-    const fromBox = this._tryReadSharePointSearchBoxValue();
-    if (fromBox) {
-      return { value: fromBox, origin: strings.SearchQueryFromPageSearchBoxLabel };
+    if (!this._useSearchUrlForFiltersActive()) {
+      const fromBox = this._tryReadSharePointSearchBoxValue();
+      if (fromBox) {
+        return { value: fromBox, origin: strings.SearchQueryFromPageSearchBoxLabel };
+      }
     }
 
     return { value: '', origin: strings.NotSetLabel };
@@ -749,7 +785,7 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
   /** Collect `?` and hash query pairs (hash uses the same rules as `_getUrlParam`). */
   private _collectAllUrlParamEntries(): Array<{ key: string; value: string }> {
     const out: Array<{ key: string; value: string }> = [];
-    const pageUrl = new URL(window.location.href);
+    const pageUrl = new URL(this._getEffectiveFilterUrlHref());
     pageUrl.searchParams.forEach((value, key) => {
       const v = (value || '').trim();
       if (v) {
@@ -757,7 +793,7 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
       }
     });
 
-    const rawHash = (window.location.hash || '').replace(/^#/, '');
+    const rawHash = (pageUrl.hash || '').replace(/^#/, '');
     if (rawHash && rawHash.indexOf('=') !== -1) {
       try {
         const qp = rawHash.indexOf('?') >= 0 ? rawHash.split('?').slice(1).join('?') : rawHash;
@@ -1619,21 +1655,22 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
     const paramKey = 'f';
     let raw: string | undefined;
     let summaryPrefix: string | undefined;
+    const urlTag = this._filterUrlSourceLabelForSummary();
 
     const named = this._getUrlParam(paramKey);
     if (named && named.trim()) {
       raw = named.trim();
-      summaryPrefix = `${strings.FromUrlLabel} (${paramKey})`;
+      summaryPrefix = `${urlTag} (${paramKey})`;
     } else {
       const fScoped = this._findPnpFQueryParamFromUrl();
       if (fScoped) {
         raw = fScoped.raw.trim();
-        summaryPrefix = `${strings.FromUrlLabel} (${fScoped.key})`;
+        summaryPrefix = `${urlTag} (${fScoped.key})`;
       } else {
         const discovered = this._discoverPnpRefinersInUrlParams();
         if (discovered) {
           raw = discovered.raw.trim();
-          summaryPrefix = `${strings.FiltersDiscoveredInUrlLabel} (${discovered.fromKey})`;
+          summaryPrefix = `${urlTag} (${discovered.fromKey})`;
         }
       }
     }
@@ -1658,13 +1695,15 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
       // Invalid `f` or unexpected JSON – try DOM before giving up.
     }
 
-    const domHit = this._tryRefinementFromVisibleFilterUi();
-    if (domHit) {
-      return {
-        filterKql: '',
-        refinementFql: domHit.refinementFql,
-        summary: domHit.summary
-      };
+    if (!this._useSearchUrlForFiltersActive()) {
+      const domHit = this._tryRefinementFromVisibleFilterUi();
+      if (domHit) {
+        return {
+          filterKql: '',
+          refinementFql: domHit.refinementFql,
+          summary: domHit.summary
+        };
+      }
     }
 
     if (raw) {
@@ -2410,6 +2449,14 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
                 PropertyPaneTextField('csvDateColumns', {
                   label: strings.CsvDateColumnsLabel,
                   description: strings.CsvDateColumnsDescription,
+                  multiline: true
+                }),
+                PropertyPaneToggle('useSearchUrlForFilters', {
+                  label: strings.UseSearchUrlForFiltersLabel
+                }),
+                PropertyPaneTextField('searchUrl', {
+                  label: strings.SearchUrlLabel,
+                  description: strings.SearchUrlDescription,
                   multiline: true
                 }),
                 PropertyPaneToggle('debugApi', {

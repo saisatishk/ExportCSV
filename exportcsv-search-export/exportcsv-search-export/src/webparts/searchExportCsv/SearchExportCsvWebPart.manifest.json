@@ -23,7 +23,9 @@
     "officeFabricIconFontName": "Page",
     "properties": {
       "sourceId": "",
-      "exportColumns": "Title,Path,Author"
+      "exportColumns": "Title,Path,Author",
+      "useSearchUrlForFilters": false,
+      "searchUrl": ""
     }
   }]
 }
