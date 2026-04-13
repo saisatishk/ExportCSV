@@ -145,21 +145,59 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
     }
   }
 
-  /** Property pane `csvDateColumns` — comma-separated managed property names for CSV date formatting. */
-  private _getCsvExplicitDateColumns(): Set<string> | undefined {
+  private _parseCsvDateColumnsSpec(): {
+    dateColumnNames?: Set<string>;
+    relativeDateRules: Array<{ prop: string; daysOffset: number }>;
+  } {
     const raw = (this.properties.csvDateColumns || '').trim();
+    const relativeDateRules: Array<{ prop: string; daysOffset: number }> = [];
     if (!raw) {
-      return undefined;
+      return { dateColumnNames: undefined, relativeDateRules };
     }
-    const set = new Set<string>();
+
+    const dateColumnNames = new Set<string>();
     const parts = raw.split(',');
     for (let i = 0; i < parts.length; i++) {
-      const t = parts[i].trim().toLowerCase();
-      if (t) {
-        set.add(t);
+      const original = (parts[i] || '').trim();
+      if (!original) {
+        continue;
       }
+
+      // Support `Created-50` / `Created+7` (UTC midnight). Field names are case-insensitive for formatting.
+      const m = original.match(/^(.*?)([+-])\s*(\d+)$/);
+      if (m && m[1] && m[2] && m[3]) {
+        const prop = m[1].trim();
+        const sign = m[2] === '-' ? -1 : 1;
+        const days = parseInt(m[3], 10);
+        if (prop && !isNaN(days) && days > 0) {
+          relativeDateRules.push({ prop, daysOffset: sign * days });
+          dateColumnNames.add(prop.toLowerCase());
+          continue;
+        }
+      }
+
+      dateColumnNames.add(original.toLowerCase());
     }
-    return set.size > 0 ? set : undefined;
+
+    return { dateColumnNames: dateColumnNames.size > 0 ? dateColumnNames : undefined, relativeDateRules };
+  }
+
+  /** Property pane `csvDateColumns` — names treated as dates for CSV formatting. */
+  private _getCsvExplicitDateColumns(): Set<string> | undefined {
+    return this._parseCsvDateColumnsSpec().dateColumnNames;
+  }
+
+  /** Property pane `csvDateColumns` — relative date filters like `Created-50` / `RefinableDate01-30`. */
+  private _getRelativeDateFilterRules(): Array<{ prop: string; daysOffset: number }> {
+    return this._parseCsvDateColumnsSpec().relativeDateRules;
+  }
+
+  /** UTC midnight ISO string with day offset from today (e.g. -50 => last 50 days). */
+  private _utcMidnightIsoWithOffset(daysOffset: number): string {
+    const now = new Date();
+    const utcMs = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0);
+    const ms = utcMs + daysOffset * 24 * 60 * 60 * 1000;
+    return new Date(ms).toISOString();
   }
 
   /** Property pane: use `searchUrl` for reading filters/keywords instead of `window.location`. */
@@ -1626,6 +1664,19 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
       kqlGroupClauses.push(
         valueTokens.length === 1 ? valueTokens[0] : `(${valueTokens.join(innerOp)})`
       );
+    }
+
+    // Property-pane relative date filters (UTC midnight): `Created-50` => Created >= today-50d.
+    // These are ANDed with whatever the URL refiners already specify.
+    const rel = this._getRelativeDateFilterRules();
+    for (let i = 0; i < rel.length; i++) {
+      const prop = (rel[i].prop || '').trim();
+      if (!prop) continue;
+      const managed = this._resolveDateRefinerManagedPropertyName(prop);
+      if (!managed) continue;
+      const cutoffIso = this._utcMidnightIsoWithOffset(rel[i].daysOffset);
+      const dt = this._fqlDatetimeOperandFromIso(cutoffIso);
+      fqlGroupClauses.push(`${managed}:range(${dt}, max, from="GE")`);
     }
 
     const filterKql =
