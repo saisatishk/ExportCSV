@@ -536,8 +536,7 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
         this._downloadCsv(this._resolveCsvDownloadFileName(), `\uFEFF${csvLines.join('\r\n')}\r\n`);
         if (this.properties.debugApi && lastDebug) {
           status.textContent =
-            `${strings.ExportCompleted} ${exported}` +
-            `${totalRows !== undefined ? ` / ${totalRows}` : ''} ` +
+            `Exported ${exported} rows ` +
             `(debug: sentQuery="${lastDebug.sentQueryText}", sentRefinement="${lastDebug.sentRefinementFilters}", sentSourceId=${lastDebug.sentSourceId}, ` +
             `extractedRows=${lastDebug.extractedRows}, ` +
             `tableRowsIsArray=${lastDebug.tableRowsIsArray}, tableRowsHasResultsArray=${lastDebug.tableRowsHasResultsArray}, tableRowsResultsLength=${lastDebug.tableRowsResultsLength ?? 'n/a'}, ` +
@@ -545,7 +544,7 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
             `primaryPath=${lastDebug.primaryPath ?? 'n/a'}, relevantDefined=${lastDebug.relevantDefined}, ` +
             `totalRowsRaw=${lastDebug.totalRowsRawType}:${lastDebug.totalRowsRawValue}`;
         } else {
-          status.textContent = `${strings.ExportCompleted} ${exported}${totalRows !== undefined ? ` / ${totalRows}` : ''}`;
+          status.textContent = `Exported ${exported} rows`;
         }
       } catch (error) {
         this._logSearchExportError('Export failed', error);
