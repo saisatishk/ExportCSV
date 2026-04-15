@@ -24,6 +24,7 @@
     "properties": {
       "sourceId": "",
       "exportColumns": "Title,Path,Author",
+      "csvFileName": "SearchResults",
       "useSearchUrlForFilters": false,
       "searchUrl": ""
     }

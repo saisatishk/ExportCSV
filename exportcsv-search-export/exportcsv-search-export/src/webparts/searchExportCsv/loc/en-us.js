@@ -4,6 +4,8 @@ define([], function() {
     "SourceIdLabel": "Result source ID",
     "ExportColumnsLabel": "CSV columns (managed properties)",
     "ExportColumnsDescription": "Comma-separated names, e.g. Title,Path,Author,ModifiedOWSDATE,FileType. IndexDocId is added automatically for paging if omitted. Empty uses Title,Path,Author.",
+    "CsvFileNameLabel": "CSV file name (no extension)",
+    "CsvFileNameDescription": "Optional. The downloaded file will be saved as <name>.csv. Invalid characters are removed. Browsers control the save location and cannot overwrite existing files on disk.",
     "CsvDateColumnsLabel": "Date columns (optional)",
     "CsvDateColumnsDescription": "Comma-separated managed property names used for two things: (1) format those columns as MM/dd/yyyy in the CSV, and (2) treat matching PnP refiner filterName values in the URL `f` JSON as date refiners (FQL range). You can also add a relative filter by writing `Field-50` or `Field+7` (UTC midnight) which adds an extra filter `Field >= today-50d` (ANDed with existing ranges). Examples: Created-50,LastModifiedTime-30,ModifiedOWSDATE-90,RefinableDate01-7. Built-in detection still applies when this is blank (RefinableDate*, created/last modified, *owsdate*, *datetime*).",
     "UseSearchUrlForFiltersLabel": "Use Search URL for filters and keywords",

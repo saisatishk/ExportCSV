@@ -56,6 +56,8 @@ export type ISearchExportCsvWebPartProps = {
   exportColumns?: string;
   /** Comma-separated managed property names to always format as dates in CSV (optional). */
   csvDateColumns?: string;
+  /** CSV file name (without extension). Download uses `<name>.csv`. */
+  csvFileName?: string;
   /** When true, read `k`, `q`, `f`, … from `searchUrl` instead of the current page URL. */
   useSearchUrlForFilters?: boolean;
   /** Page URL whose query/hash contains the PnP search filters (copy from browser on the search page). */
@@ -531,7 +533,7 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
           }
         }
 
-        this._downloadCsv('SearchResults.csv', `\uFEFF${csvLines.join('\r\n')}\r\n`);
+        this._downloadCsv(this._resolveCsvDownloadFileName(), `\uFEFF${csvLines.join('\r\n')}\r\n`);
         if (this.properties.debugApi && lastDebug) {
           status.textContent =
             `${strings.ExportCompleted} ${exported}` +
@@ -571,8 +573,11 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
   }
 
   /**
-   * Read a query-string parameter from `?` and (when present) from the hash fragment
-   * (`#k=...&f=...` is used on some modern search experiences).
+   * Read a query-string parameter from the **effective** URL.
+   *
+   * - **Why**: PnP Modern Search stores state in query string (and sometimes in the hash query).
+   * - **Where used**: called by `_resolveSearchQueryForExport`, `_getUrlFilterParts`, and value discovery helpers.
+   * - **What it reads**: `?key=value` first, then `#key=value` (or `#...?...&key=value`) as a fallback.
    */
   private _getUrlParam(name: string): string {
     const key = (name || '').trim();
@@ -594,6 +599,12 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
     }
   }
 
+  /**
+   * Escape HTML for safely rendering user-controlled values in the debug UI.
+   *
+   * - **Why**: query text and filter summaries are derived from URL/property pane and should not be injected as HTML.
+   * - **Where used**: in `render()` when `debugApi` is enabled.
+   */
   private _escapeHtml(value: string): string {
     return value
       .replace(/&/g, '&amp;')
@@ -603,6 +614,12 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
       .replace(/'/g, '&#39;');
   }
 
+  /**
+   * Resolve a value from (1) property pane, then (2) URL param(s), with an origin label for UI/debug.
+   *
+   * - **Why**: allow configuring `sourceId` / query params via property pane while still supporting URL-driven pages.
+   * - **Where used**: `render()` and export click handler for `sourceId`.
+   */
   private _resolveValue(propertyValue: string | undefined, paramName: string | undefined, fallbackParam: string): {
     value: string;
     origin: string;
@@ -630,7 +647,12 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
     return { value: '', origin: strings.NotSetLabel };
   }
 
-  /** Ordered URL keys for keyword query (PnP uses `k` when “Update URL” is enabled). Fixed list — no property-pane overrides. */
+  /**
+   * Ordered URL keys for keyword query.
+   *
+   * - **Why**: PnP commonly uses `k` when “Update URL” is enabled, but other pages use `q`/`query`/etc.
+   * - **Where used**: `_resolveSearchQueryForExport`.
+   */
   private _searchQueryUrlParamCandidates(): string[] {
     return [
       'k',
@@ -649,7 +671,11 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
   }
 
   /**
-   * Some tenants / web parts use an uncommon query param name. Scan ? and hash for likely keyword params (excluding `f` JSON).
+   * Heuristic keyword discovery when the query param isn't one of the known candidates.
+   *
+   * - **Why**: some pages use non-standard param names for the keyword query.
+   * - **Where used**: `_resolveSearchQueryForExport` (after trying known keys).
+   * - **Important**: excludes PnP filter JSON (`f`) and obvious non-keyword params to avoid false positives.
    */
   private _tryDiscoverSearchQueryFromUrlParams(): { value: string; key: string } | undefined {
     const filtersKey = 'f';
@@ -684,6 +710,12 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
     return undefined;
   }
 
+  /**
+   * Screen out inputs that are likely refiners/date-pickers/dialog fields (not the main search keyword box).
+   *
+   * - **Why**: pages often contain many inputs; only the primary search box should be used for keyword fallback.
+   * - **Where used**: `_scoreSearchInputCandidate` → `_tryReadSharePointSearchBoxValue`.
+   */
   private _inputIsProbablyRefinerOrDialog(el: Element): boolean {
     if (el.closest('.ms-Panel-main, .ms-Dialog-main, [role="dialog"], [aria-modal="true"]')) {
       return true;
@@ -702,6 +734,12 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
     return false;
   }
 
+  /**
+   * Score a visible input by “likelihood of being the main search box”.
+   *
+   * - **Why**: robustly pick the right box without needing per-page selectors.
+   * - **Where used**: `_tryReadSharePointSearchBoxValue`.
+   */
   private _scoreSearchInputCandidate(el: HTMLInputElement | HTMLTextAreaElement): number {
     if (this._inputIsProbablyRefinerOrDialog(el)) {
       return 0;
@@ -735,7 +773,12 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
     return score;
   }
 
-  /** Prefer page canvas / main so DOM walks skip suite chrome (faster on every render). */
+  /**
+   * DOM roots to search for inputs/filters.
+   *
+   * - **Why**: avoid scanning full chrome where possible; keeps render-time DOM queries cheaper.
+   * - **Where used**: `_tryReadSharePointSearchBoxValue`, `_tryRefinementFromVisibleFilterUi`.
+   */
   private _getPageContentRoots(): Element[] {
     const roots: Element[] = [];
     const canvas = document.querySelector('#spPageCanvasContent');
@@ -755,7 +798,10 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
   }
 
   /**
-   * Read keyword text from SharePoint / Fluent / PnP SearchBox-style fields (best-scoring visible input).
+   * Read keyword text from the page's visible search box (best-scoring input).
+   *
+   * - **Why**: when URL doesn't include `k`/`q`, we still want export to follow what the user typed.
+   * - **Where used**: `_resolveSearchQueryForExport` (skipped when Search URL override is enabled).
    */
   private _tryReadSharePointSearchBoxValue(): string {
     const roots = this._getPageContentRoots();
@@ -791,7 +837,13 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
     return bestVal;
   }
 
-  /** Search keywords: URL (`k`, `q`, …) → loose URL scan → visible SearchBox. Empty → export uses `*`. */
+  /**
+   * Resolve keyword query for export.
+   *
+   * - **Why**: match PnP Search Results keyword behavior as closely as possible.
+   * - **Where used**: `render()` + export click handler to build `Querytext` (KQL).
+   * - **Order**: known URL keys → heuristic URL scan → page search box (unless Search URL override is on).
+   */
   private _resolveSearchQueryForExport(): { value: string; origin: string } {
     const originTag = this._filterUrlSourceLabelForSummary();
     const keys = this._searchQueryUrlParamCandidates();
@@ -820,7 +872,12 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
     return { value: '', origin: strings.NotSetLabel };
   }
 
-  /** Collect `?` and hash query pairs (hash uses the same rules as `_getUrlParam`). */
+  /**
+   * Collect query-string key/value pairs from `?` and hash query (if present).
+   *
+   * - **Why**: PnP may store state in hash (e.g. `#k=...&f=...`) on some modern experiences.
+   * - **Where used**: `_findPnpFQueryParamFromUrl`, `_discoverPnpRefinersInUrlParams`, keyword discovery.
+   */
   private _collectAllUrlParamEntries(): Array<{ key: string; value: string }> {
     const out: Array<{ key: string; value: string }> = [];
     const pageUrl = new URL(this._getEffectiveFilterUrlHref());
@@ -850,7 +907,12 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
     return out;
   }
 
-  /** PnP sometimes double-encodes `f`; decode until stable or max passes. */
+  /**
+   * Decode PnP refiner JSON value which may be URL-encoded multiple times.
+   *
+   * - **Why**: we see `f` values that are encoded 1–3 times depending on navigation/history updates.
+   * - **Where used**: `_findPnpFQueryParamFromUrl`, `_discoverPnpRefinersInUrlParams`, `_getUrlFilterParts`.
+   */
   private _decodePnpRefinerChain(raw: string): string {
     let s = raw || '';
     for (let pass = 0; pass < 4; pass++) {
@@ -867,6 +929,12 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
     return s;
   }
 
+  /**
+   * Lightweight check whether a decoded string looks like PnP Modern Search refiner JSON.
+   *
+   * - **Why**: avoid `JSON.parse` on every URL param unless it plausibly matches the expected shape.
+   * - **Where used**: `_findPnpFQueryParamFromUrl`, `_discoverPnpRefinersInUrlParams`.
+   */
   private _isPnpRefinerFilterJson(jsonText: string): boolean {
     const t = (jsonText || '').trim();
     if (!t || t.charAt(0) !== '[') {
@@ -888,12 +956,10 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
   }
 
   /**
-   * Some tenants encode refiner JSON under a key other than `f`, or only in the hash.
-   * Scan all query values for an array payload that looks like PnP refiners.
-   */
-  /**
-   * PnP often uses `f` or `f_<webPartGuid>` (e.g. `f_574443da-2e4b-4967-bbb5-f425b79bc2c8`) for the same JSON payload.
-   * Prefer `f`, then any `f_<guid>` key so export matches the Filters web part URL.
+   * Find PnP refiner JSON in the URL.
+   *
+   * - **Why**: PnP stores selected refiners in `f` or `f_<webPartGuid>`; export must read the same payload.
+   * - **Where used**: `_getUrlFilterParts` (to build `RefinementFilters` FQL).
    */
   private _findPnpFQueryParamFromUrl(): { raw: string; key: string } | undefined {
     const entries = this._collectAllUrlParamEntries();
@@ -922,6 +988,12 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
     return undefined;
   }
 
+  /**
+   * Fallback discovery for PnP refiner JSON under *any* URL param key.
+   *
+   * - **Why**: some pages/solutions store the same `f` JSON under a different key or only in the hash.
+   * - **Where used**: `_getUrlFilterParts` when neither `f` nor `f_<guid>` is present.
+   */
   private _discoverPnpRefinersInUrlParams(): { raw: string; fromKey: string } | undefined {
     const entries = this._collectAllUrlParamEntries();
     for (let i = 0; i < entries.length; i++) {
@@ -934,7 +1006,11 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
   }
 
   /**
-   * When PnP does not sync refiners to the URL, infer FileType FQL from a visible File type control (heuristic).
+   * Infer FileType refiner from visible UI when PnP does not sync refiners to URL.
+   *
+   * - **Why**: some deployments disable “Update URL” → no `f` param; export still tries to follow the UI.
+   * - **Where used**: `_getUrlFilterParts` (only when Search URL override is off).
+   * - **Scope**: intentionally limited to FileType; other refiners are too varied to infer safely.
    */
   private _tryRefinementFromVisibleFilterUi(): { refinementFql: string; summary: string } | undefined {
     const hostSelector =
@@ -1008,6 +1084,12 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
     return undefined;
   }
 
+  /**
+   * Escape a string for use inside an FQL `"..."` operand.
+   *
+   * - **Why**: refinement tokens/values can contain quotes/backslashes.
+   * - **Where used**: all FQL builders (`FileType`, `Author`, `Refinable*`, date operands via `datetime("...")`).
+   */
   private _escapeFqlEqualsArg(value: string): string {
     return (value || '')
       .replace(/\\/g, '\\\\')
@@ -1027,6 +1109,12 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
     return `${join}(${parts.join(', ')})`;
   }
 
+  /**
+   * Choose a human-readable value for a PnP filter value.
+   *
+   * - **Why**: PnP stores both `name` (display label) and `value` (token/encoded); sometimes only one is present.
+   * - **Where used**: KQL fallback tokens, FileType parsing, and some refiner builders.
+   */
   private _extractPnpFilterDisplayValue(_filterName: string, fv: IPnpFilterValue): string {
     let display = (fv.name || '').trim();
     if (!display && fv.value) {
@@ -1035,7 +1123,12 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
     return display;
   }
 
-  /** Normalize ISO date string for FQL datetime("…") operands. */
+  /**
+   * Normalize ISO-ish date strings for FQL `datetime("...")` operands.
+   *
+   * - **Why**: PnP values may be quoted or date-only; we standardize for consistent comparisons/ranges.
+   * - **Where used**: `_fqlDatetimeOperandFromIso`, date range folding, and KQL fallback ordering.
+   */
   private _normalizeIsoForFqlDateTime(raw: string): string {
     let t = (raw || '').trim().replace(/^["']|["']$/g, '');
     if (/^\d{4}-\d{2}-\d{2}$/.test(t)) {
@@ -1044,12 +1137,23 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
     return t;
   }
 
+  /**
+   * Convert a date string into an FQL `datetime("...")` operand.
+   *
+   * - **Why**: centralize escaping/quoting so all date refiners use the same format.
+   * - **Where used**: `_buildDateRefinerFqlGroup` and relative date rules from `csvDateColumns`.
+   */
   private _fqlDatetimeOperandFromIso(raw: string): string {
     const t = this._normalizeIsoForFqlDateTime(raw);
     return `datetime("${this._escapeFqlEqualsArg(t)}")`;
   }
 
-  /** PnP `f` JSON may omit operators or use string names; normalize for Geq/Leq pairing. */
+  /**
+   * Normalize PnP comparison operators into our enum.
+   *
+   * - **Why**: URL `f` JSON sometimes uses numbers, sometimes names like `geq`.
+   * - **Where used**: `_collectPnpDateFilterValues` (date refiners) and date→KQL conversion.
+   */
   private _coercePnpComparisonOperator(raw: unknown): number | undefined {
     if (raw === undefined || raw === null) {
       return undefined;
@@ -1087,8 +1191,10 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
   }
 
   /**
-   * When date bounds were joined with `or(...)` we emit half-open FQL:
-   * `range(min, hi, LE)` and `range(lo, max, GE)`. That OR is almost always true — merge to one interval.
+   * Merge two half-open date ranges into one inclusive interval when possible.
+   *
+   * - **Why**: PnP can emit `or(>=lo, <=hi)` for a between filter; that would match almost everything.
+   * - **Where used**: `_buildDateRefinerFqlGroup` when combining multiple date parts.
    */
   private _mergeOrDateHalfRangeFqlIfApplicable(
     managedProperty: string,
@@ -1140,7 +1246,12 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
     return pick(parts[0], parts[1]) ?? pick(parts[1], parts[0]);
   }
 
-  /** ISO timestamps from PnP `f` JSON for date refiners (values[].value + operator). */
+  /**
+   * Extract ISO timestamps from PnP `f` JSON values for date refiners.
+   *
+   * - **Why**: PnP date filters store the real ISO value in `value` and a label in `name`.
+   * - **Where used**: `_buildDateRefinerFqlGroup` and `_buildDateKqlFilterGroup`.
+   */
   private _collectPnpDateFilterValues(group: IPnpFilterGroup): Array<{ op: number; iso: string }> {
     const vals = group.values || [];
     const dated: Array<{ op: number; iso: string }> = [];
@@ -1157,8 +1268,12 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
   }
 
   /**
-   * PnP date refiners belong in RefinementFilters (FQL), not KQL Querytext — same path as FileType in the refiners web part.
-   * Uses RANGE / equals patterns from MS FQL reference.
+   * Build RefinementFilters FQL for date refiners using `range(...)`.
+   *
+   * - **Why**: PnP date refiners are applied via RefinementFilters; embedding KQL in Querytext often diverges.
+   * - **Where used**: `_buildFilterPartsFromPnpFiltersJson` for `Created`, `LastModifiedTime`, `RefinableDate*`,
+   *   and any prop listed in `csvDateColumns` that is treated as a date refiner.
+   * - **Behavior**: folds Geq+Leq and two-Eq “between” into one inclusive range.
    */
   private _buildDateRefinerFqlGroup(group: IPnpFilterGroup, managedProperty: string): string {
     const dated = this._collectPnpDateFilterValues(group);
@@ -1263,8 +1378,10 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
   }
 
   /**
-   * KQL for date managed properties (e.g. ModifiedOWSDATE) when not using RefinementFilters FQL.
-   * Same range rules as `_buildDateRefinerFqlGroup` — two Eq bounds → `>= lo AND <= hi`.
+   * Fallback KQL for date comparisons when we cannot apply the filter as FQL RefinementFilters.
+   *
+   * - **Why**: some properties/tenants may not accept certain date filters as refiners; we still try to filter in Querytext.
+   * - **Where used**: `_buildFilterPartsFromPnpFiltersJson` only when `_buildDateRefinerFqlGroup` returned empty.
    */
   private _buildDateKqlFilterGroup(group: IPnpFilterGroup): string {
     const managedProperty = (group.filterName || '').trim();
@@ -1359,7 +1476,12 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
     return `(${parts.join(joiner)})`;
   }
 
-  /** Build SharePoint FQL for a PnP FileType / FileExtension refiner group (matches search UI refiners). */
+  /**
+   * Build FQL for FileType refiners (RefinementFilters).
+   *
+   * - **Why**: FileType is a true refiner in SharePoint search; applying it in RefinementFilters matches PnP behavior.
+   * - **Where used**: `_buildFilterPartsFromPnpFiltersJson` and `_tryRefinementFromVisibleFilterUi`.
+   */
   private _buildFileTypeFqlGroup(group: IPnpFilterGroup): string {
     const vals = group.values || [];
     const pieces: string[] = [];
@@ -1385,8 +1507,10 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
   }
 
   /**
-   * People / author checkbox refiners (User, Author, DisplayAuthor, …) must use RefinementFilters FQL on
-   * `Author` — same as the Filters web part. KQL on `DisplayAuthor` does not match that path and skews counts.
+   * Build FQL for PnP people/author refiners.
+   *
+   * - **Why**: PnP applies these through RefinementFilters on `Author`; using KQL on DisplayAuthor can diverge.
+   * - **Where used**: `_buildFilterPartsFromPnpFiltersJson` when `_isPersonAuthorRefinerFilterName` matches.
    */
   private _buildAuthorRefinerFqlGroup(group: IPnpFilterGroup): string {
     const vals = group.values || [];
@@ -1410,7 +1534,12 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
     return this._combineFqlRefinementParts(pieces, innerOpLower === 'and' ? 'and' : 'or');
   }
 
-  /** filterName values PnP uses for “people” refiners (checkbox / user picker). */
+  /**
+   * Recognize PnP filterName values that represent a people/author refiner.
+   *
+   * - **Why**: these need special handling via `_buildAuthorRefinerFqlGroup`.
+   * - **Where used**: `_buildFilterPartsFromPnpFiltersJson`.
+   */
   private _isPersonAuthorRefinerFilterName(fn: string): boolean {
     const s = (fn || '').trim().toLowerCase();
     if (!s) {
@@ -1439,20 +1568,30 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
   }
 
   /**
-   * PnP-managed refiner columns use managed property names like `RefinableString09`. The Filters web part
-   * applies them via RefinementFilters (FQL), not QueryText — same as FileType. No per-tenant name list needed.
+   * Recognize SharePoint's built-in `Refinable*` managed property family.
+   *
+   * - **Why**: these are intended for refiners; PnP stores their selections in `f` and applies them via RefinementFilters.
+   * - **Where used**: `_buildFilterPartsFromPnpFiltersJson`.
    */
   private _isRefinableManagedPropertyName(name: string): boolean {
     return /^Refinable(String|Date|Int|Decimal|Double|Guid)/i.test((name || '').trim());
   }
 
-  /** `RefinableDate01` must use FQL `range()`, not `RefinableDate01:"iso"` × N (unsatisfiable AND). */
+  /**
+   * Recognize `RefinableDate*` names.
+   *
+   * - **Why**: date refiners must become FQL `range(...)` rather than token-equals, especially when a range is selected.
+   * - **Where used**: `_shouldTreatFilterAsDateRefiner`.
+   */
   private _isRefinableDatePropertyName(name: string): boolean {
     return /^RefinableDate/i.test((name || '').trim());
   }
 
   /**
-   * KQL path for *OWSDATE* / *datetime* managed properties — needs `>=` / `<=`, not two `prop:"…"` ANDed.
+   * Detect date-like managed property names that often show up as crawled date fields (e.g. `ModifiedOWSDATE`).
+   *
+   * - **Why**: these should be handled as date refiners (prefer FQL `range(...)`).
+   * - **Where used**: `_shouldTreatFilterAsDateRefiner`.
    */
   private _isKqlDateManagedPropertyName(prop: string): boolean {
     const lower = (prop || '').trim().toLowerCase();
@@ -1469,7 +1608,10 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
   }
 
   /**
-   * Managed property name for FQL date `range()` — maps PnP filterName (created/modified/…) to search schema names.
+   * Map PnP date filterName (created/modified/…) to managed property names used by the Search API.
+   *
+   * - **Why**: PnP uses friendly keys; Search REST expects schema names (e.g. `LastModifiedTime`).
+   * - **Where used**: date refiner building and relative date rules.
    */
   private _resolveDateRefinerManagedPropertyName(prop: string): string {
     const fn = (prop || '').trim().toLowerCase();
@@ -1483,8 +1625,11 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
   }
 
   /**
-   * Date refiners: property pane `csvDateColumns` (same names as CSV date formatting) plus built-in patterns
-   * (RefinableDate*, created/last modified, *owsdate*, *datetime*).
+   * Decide whether a PnP filter group should be treated as a date refiner.
+   *
+   * - **Why**: date refiners must become FQL `range(...)` clauses, not token-equals strings.
+   * - **Where used**: `_buildFilterPartsFromPnpFiltersJson`.
+   * - **Rule**: `csvDateColumns` names are hints; built-in patterns still apply.
    */
   private _shouldTreatFilterAsDateRefiner(prop: string): boolean {
     const key = prop.trim().toLowerCase();
@@ -1510,10 +1655,11 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
   }
 
   /**
-   * SharePoint often encodes refiner selections as opaque tokens in `values[].value` (e.g. leading `ǂ` + hex).
-   * When present, use them in FQL equals — same data PnP sends back to search.
+   * Normalize opaque refinement tokens from PnP (e.g. leading `ǂ` + hex).
+   *
+   * - **Why**: tokens may include extra quotes/escaping when stored in URL JSON; we must send a clean token to search.
+   * - **Where used**: `_isLikelyRefinementTokenValue` and `Refinable*` FQL building.
    */
-  /** PnP sometimes wraps the token in extra JSON string quotes (`"ǂǂ…"` or leading `"` only). */
   private _unwrapPnpRefinementTokenString(raw: string): string {
     let t = (raw || '').trim();
     for (let i = 0; i < 3; i++) {
@@ -1528,6 +1674,12 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
     return t.trim();
   }
 
+  /**
+   * Heuristic: determine whether a PnP value looks like a refinement token.
+   *
+   * - **Why**: if a token is present, it is preferred over display text for exact refinement matching.
+   * - **Where used**: `_buildManagedPropertyRefinerFqlGroup`.
+   */
   private _isLikelyRefinementTokenValue(raw: string): boolean {
     const t = this._unwrapPnpRefinementTokenString(raw);
     if (!t) {
@@ -1543,9 +1695,10 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
   }
 
   /**
-   * Generic FQL for any managed property that matches `Refinable*` — covers most custom PnP filter fields.
-   * SharePoint RefinementFilters expect `RefinerName:"RefinementToken"` (KeywordQuery / REST), not
-   * `RefinerName:equals("…")` — the latter can return TotalRows=0 while the PnP UI still shows hits.
+   * Build RefinementFilters FQL for `Refinable*` managed properties.
+   *
+   * - **Why**: SharePoint expects `RefinerName:"RefinementToken"` for refinement filters; `equals("...")` can return 0 rows.
+   * - **Where used**: `_buildFilterPartsFromPnpFiltersJson` for `RefinableString*`, `RefinableInt*`, etc.
    */
   private _buildManagedPropertyRefinerFqlGroup(group: IPnpFilterGroup): string {
     const mp = (group.filterName || '').trim();
@@ -1579,7 +1732,13 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
     return this._combineFqlRefinementParts(pieces, innerOpLower === 'and' ? 'and' : 'or');
   }
 
-  /** Map PnP URL `f` JSON to FQL + KQL: templates (FileType, dates, Author, Refinable*) then fallback KQL. */
+  /**
+   * Convert PnP URL `f` JSON into FQL RefinementFilters + optional KQL additions.
+   *
+   * - **Why**: export calls Search REST directly; we must recreate PnP's refiner application to match UI results.
+   * - **Where used**: `_getUrlFilterParts` (URL → parts), then export click handler → `_fetchExportPage`.
+   * - **Output**: `refinementFql` is preferred; `filterKql` is only used for non-refiner fallbacks.
+   */
   private _buildFilterPartsFromPnpFiltersJson(rawJson: string): { filterKql: string; refinementFql: string } {
     let parsed: IPnpFilterGroup[];
     try {
@@ -1697,9 +1856,11 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
   }
 
   /**
-   * PnP Modern Search stores refiners in query string `f` as URL-encoded JSON:
-   * [{"filterName":"FileType","values":[{"name":"docx",...}],"operator":"or"}]
-   * Also discovers the same JSON under other param keys / hash, then falls back to visible File type UI.
+   * Resolve active refiners from the effective URL into `{ refinementFql, filterKql, summary }`.
+   *
+   * - **Why**: export uses Search REST; this bridges URL state (PnP `f` JSON) into the request payload.
+   * - **Where used**: `render()` (debug UI summary) and export click handler (builds `refinementFiltersPayload` + extra KQL).
+   * - **Fallbacks**: tries `f`, then `f_<guid>`, then any param that looks like PnP filter JSON, then (optionally) DOM FileType.
    */
   private _getUrlFilterParts(): { filterKql: string; refinementFql: string; summary: string } {
     // Always apply PnP URL `f` (and discovery / UI fallback) via RefinementFilters — matches Filters web part.
@@ -1765,14 +1926,22 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
   }
 
   /**
-   * PnP date filters put a real ISO timestamp in `value` and a label in `name` (e.g. "Older than a year").
-   * KQL must use `value` + `operator`, not the display name.
+   * Detect whether a string is an ISO-like date/time value coming from PnP filter JSON.
+   *
+   * - **Why**: PnP date filters store the *real* timestamp in `value` and a display label in `name`.
+   * - **Where used**: `_collectPnpDateFilterValues` and date→KQL conversion (`_tryPnpDateFilterToKql`).
    */
   private _looksLikeIsoDateTimeForKql(s: string): boolean {
     const t = (s || '').trim().replace(/^["']|["']$/g, '');
     return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(t) || /^\d{4}-\d{2}-\d{2}$/.test(t);
   }
 
+  /**
+   * Convert ISO date/time into a KQL `datetime("...")` literal.
+   *
+   * - **Why**: Search REST expects the `datetime("...")` wrapper for date comparisons in Querytext.
+   * - **Where used**: `_tryPnpDateFilterToKql` and `_buildDateKqlFilterGroup`.
+   */
   private _isoValueToKqlDateTimeLiteral(raw: string): string {
     let t = (raw || '').trim().replace(/^["']|["']$/g, '');
     if (/^\d{4}-\d{2}-\d{2}$/.test(t)) {
@@ -1782,6 +1951,12 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
     return `datetime("${t}")`;
   }
 
+  /**
+   * Convert a single PnP date filter value into a KQL comparison (Eq/Geq/Leq/...).
+   *
+   * - **Why**: some date-like filters may end up on the KQL path as a fallback.
+   * - **Where used**: `_filterValueToKqlToken` for built-in created/modified when emitting KQL tokens.
+   */
   private _tryPnpDateFilterToKql(managedProperty: string, fv: IPnpFilterValue): string {
     const rawVal = (fv.value || '').trim();
     if (!rawVal || !this._looksLikeIsoDateTimeForKql(rawVal)) {
@@ -1810,6 +1985,12 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
     }
   }
 
+  /**
+   * Convert one PnP filter value into a KQL token.
+   *
+   * - **Why**: for non-refiner fields (or fallback cases) we append KQL clauses to Querytext.
+   * - **Where used**: `_buildFilterPartsFromPnpFiltersJson` when a group isn't handled as an FQL refiner.
+   */
   private _filterValueToKqlToken(filterName: string, fv: IPnpFilterValue): string {
     const fn = filterName.toLowerCase();
     if (fn === 'filetype' || fn === 'fileextension') {
@@ -1850,7 +2031,12 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
     return `${prop}:${escaped}`;
   }
 
-  /** Decode hex embedded in PnP filter value strings (fallback when name is missing). */
+  /**
+   * Decode embedded hex from PnP filter value strings (fallback when `name` is missing).
+   *
+   * - **Why**: some PnP filter payloads omit `name` and only provide an encoded token/value.
+   * - **Where used**: `_extractPnpFilterDisplayValue`.
+   */
   private _tokenFromPnpFilterValueField(raw: string): string {
     const s = String(raw).replace(/\\/g, '');
     const hexMatch = s.match(/([0-9a-fA-F]{4,})/);
@@ -1871,12 +2057,24 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
     return s.replace(/^["']|["']$/g, '').trim();
   }
 
+  /**
+   * Escape a CSV cell per RFC-style rules (quote when needed, double quotes inside).
+   *
+   * - **Why**: exported values may contain commas/newlines/quotes.
+   * - **Where used**: export loop building `csvLines`.
+   */
   private _escapeCsvCell(value: string): string {
     const v = value || '';
     const escaped = v.replace(/"/g, '""');
     return /[",\r\n]/.test(v) ? `"${escaped}"` : escaped;
   }
 
+  /**
+   * Trigger a browser download for the generated CSV.
+   *
+   * - **Why**: avoids server-side storage and works on modern SharePoint pages.
+   * - **Where used**: end of the export click handler.
+   */
   private _downloadCsv(fileName: string, content: string): void {
     const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -1890,6 +2088,24 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
     URL.revokeObjectURL(url);
   }
 
+  /**
+   * Resolve the CSV download file name from web part properties.
+   *
+   * - **Why**: users want a friendly configurable file name; browsers still control the final save location.
+   * - **Where used**: export completion (before `_downloadCsv`).
+   */
+  private _resolveCsvDownloadFileName(): string {
+    const base = (this.properties.csvFileName || '').trim();
+    const safeBase = base.replace(/[\\/:*?"<>|]/g, '').trim();
+    return (safeBase || 'SearchResults') + '.csv';
+  }
+
+  /**
+   * Normalize unknown JSON cell values into a string.
+   *
+   * - **Why**: Search REST sometimes returns `{ Value: ... }`-shaped objects; CSV expects strings.
+   * - **Where used**: `_extractRowsFromSearchJson` (via `prepareSearchRowCells`).
+   */
   private _normalizeToString(value: unknown): string {
     if (value === null || value === undefined) return '';
     if (typeof value === 'string') return value;
@@ -1903,7 +2119,12 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
     return String(value);
   }
 
-  /** Strip braces/quotes so Search API gets a plain GUID. */
+  /**
+   * Normalize a SourceId string into a plain GUID-like string.
+   *
+   * - **Why**: property pane input may include braces or quotes.
+   * - **Where used**: `_formatSourceIdForSearchApi`.
+   */
   private _normalizeSourceId(raw: string): string {
     let s = (raw || '').trim();
     s = s.replace(/^['"]|['"]$/g, '');
@@ -1914,8 +2135,10 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
   }
 
   /**
-   * postquery SourceId must be Edm.Guid. Extract first GUID from pasted text,
-   * accept 32-char hex without hyphens; return lowercase `xxxxxxxx-xxxx-...` for JSON.
+   * Format SourceId for Search REST `postquery` (Edm.Guid).
+   *
+   * - **Why**: Search REST is strict about GUID formatting; pasted values can include extra text.
+   * - **Where used**: `_fetchExportPage` before issuing the request.
    */
   private _formatSourceIdForSearchApi(raw: string): string {
     let s = this._normalizeSourceId(raw);
@@ -1944,18 +2167,34 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
     return s.toLowerCase();
   }
 
-  /** KQL: escape single quotes by doubling. */
+  /**
+   * Escape single quotes for KQL (double them).
+   *
+   * - **Why**: Search REST uses single quotes around parameter values in GET mode and inside Querytext parsing.
+   * - **Where used**: `_fetchExportPage` and GET fallback builder.
+   */
   private _escapeKqlQuotes(kql: string): string {
     return (kql || '').replace(/'/g, "''");
   }
 
-  /** First-level keys on JSON (for debug only). */
+  /**
+   * First-level JSON keys for diagnostics.
+   *
+   * - **Why**: SharePoint search payloads differ across OData modes/versions; keys help debug extraction.
+   * - **Where used**: `_extractRowsFromSearchJson` debug output.
+   */
   private _jsonTopKeysForDebug(root: unknown, max: number = 12): string {
     if (!root || typeof root !== 'object' || Array.isArray(root)) return '(non-object)';
     const keys = Object.keys(root as Record<string, unknown>);
     return keys.slice(0, max).join(',') + (keys.length > max ? '…' : '');
   }
 
+  /**
+   * Safely traverse a JSON object by path segments.
+   *
+   * - **Why**: Search REST response shapes vary; this supports ordered “known” paths before doing a deep scan.
+   * - **Where used**: `_findRelevantResultsBlock`.
+   */
   private _getPath(root: unknown, segments: string[]): unknown {
     let cur: unknown = root;
     for (let i = 0; i < segments.length; i++) {
@@ -1967,8 +2206,10 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
   }
 
   /**
-   * SharePoint `postquery` JSON shape differs by OData mode (`verbose` vs `nometadata`) and version.
-   * Walk the tree to find the RelevantResults-like block: has Table.Rows and TotalRows(-like) fields.
+   * Locate the “relevant results” block in a Search REST response.
+   *
+   * - **Why**: `postquery` payload shape differs by OData mode and tenant build; extraction cannot rely on one path.
+   * - **Where used**: `_extractRowsFromSearchJson` and `_fetchExportPage` (row-count heuristics).
    */
   private _findRelevantResultsBlock(root: unknown): { block: Record<string, unknown> | undefined; how: string } {
     const tryFromPrimary = (primary: unknown, path: string): { block: Record<string, unknown>; how: string } | undefined => {
@@ -2060,6 +2301,12 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
     return { block: undefined, how: 'not-found' };
   }
 
+  /**
+   * Execute `/_api/search/postquery` with the requested OData mode.
+   *
+   * - **Why**: nometadata is smaller/faster, but some tenants only return useful shapes in verbose.
+   * - **Where used**: `_fetchExportPage` (primary transport + fallbacks).
+   */
   private async _postSearchPostquery(
     postUrl: string,
     payload: Record<string, unknown>,
@@ -2100,8 +2347,10 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
   }
 
   /**
-   * Classic Search REST: GET `/_api/search/query` returns `d.query.PrimaryQueryResult` (verbose).
-   * Fallback when POST `postquery` parses as empty on some farms/builds.
+   * Execute classic Search REST GET `/_api/search/query` (verbose OData shape).
+   *
+   * - **Why**: some tenants return an empty/odd `postquery` shape; GET is a pragmatic fallback.
+   * - **Where used**: `_fetchExportPage` when POST extraction yields 0 rows on the first page.
    */
   private async _getSearchQueryViaGet(
     webUrl: string,
@@ -2161,6 +2410,13 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
     return await response.json();
   }
 
+  /**
+   * Extract export rows from a Search REST response into a simple `{ [column]: string }` array.
+   *
+   * - **Why**: POST/GET responses differ by OData mode and tenant; we normalize to one row shape for CSV.
+   * - **Where used**: `_fetchExportPage` for each export page (POST first, then optional GET fallback).
+   * - **Also returns**: paging docid (`IndexDocId`) and total row counts when available, for progress UI.
+   */
   private _extractRowsFromSearchJson(
     json: unknown,
     exportColumnKeys: string[]
@@ -2265,6 +2521,17 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
     };
   }
 
+  /**
+   * Fetch one “page” of results for export (POST `postquery` with DocId sort for paging).
+   *
+   * - **Why**: SharePoint Search REST has practical per-request limits; we loop pages using `IndexDocId`.
+   * - **Where used**: export click handler loop.
+   * - **Fallbacks**:
+   *   - retries with other OData mode (nometadata/verbose)
+   *   - retries RefinementFilters as string when one filter is present
+   *   - retries with empty Querytext when refiners-only + `*`
+   *   - optional GET `search/query` fallback on first page
+   */
   private async _fetchExportPage(params: {
     webUrl: string;
     sourceId: string;
@@ -2496,6 +2763,10 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
                   label: strings.ExportColumnsLabel,
                   description: strings.ExportColumnsDescription,
                   multiline: true
+                }),
+                PropertyPaneTextField('csvFileName', {
+                  label: strings.CsvFileNameLabel,
+                  description: strings.CsvFileNameDescription
                 }),
                 PropertyPaneTextField('csvDateColumns', {
                   label: strings.CsvDateColumnsLabel,
