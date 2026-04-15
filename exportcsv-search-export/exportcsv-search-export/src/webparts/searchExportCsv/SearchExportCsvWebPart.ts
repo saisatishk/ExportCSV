@@ -862,6 +862,25 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
       };
     }
 
+    /**
+     * Some search boxes write the keyword query directly into the hash fragment as raw KQL, e.g.:
+     * `#JHUTransferIssuer:*` or `#ManagedPropertyName:*` (no `k=` / `q=` and no `=` at all).
+     *
+     * Treat that raw fragment as Querytext so export matches the Search Results page behavior.
+     */
+    try {
+      const pageUrl = new URL(this._getEffectiveFilterUrlHref());
+      const rawHash = (pageUrl.hash || '').replace(/^#/, '').trim();
+      if (rawHash && rawHash.indexOf('=') === -1) {
+        const decoded = decodeURIComponent(rawHash);
+        if (decoded && decoded.charAt(0) !== '[' && decoded.charAt(0) !== '{') {
+          return { value: decoded, origin: `${originTag} (#)` };
+        }
+      }
+    } catch {
+      // ignore invalid URL/hash
+    }
+
     if (!this._useSearchUrlForFiltersActive()) {
       const fromBox = this._tryReadSharePointSearchBoxValue();
       if (fromBox) {
