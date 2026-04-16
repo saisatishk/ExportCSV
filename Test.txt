@@ -4,3 +4,5 @@ https://willettadvisors.sharepoint.com/sites/dev-finance/SitePages/Finance-Docum
 https://willettadvisors.sharepoint.com/sites/uat-finance/SitePages/Finance-Documents-Search.aspx?f_574443da-2e4b-4967-bbb5-f425b79bc2c8=[{"filterName":"RefinableString11","values":[{"name":"Capital Call/Distribution","value":"\"ǂǂ4361706974616c2043616c6c2f446973747269627574696f6e\"","operator":0}],"operator":"or"},{"filterName":"RefinableDate01","values":[{"name":"2026-01-01T05:00:00.000Z","value":"2026-01-01T05:00:00.000Z","operator":4,"disabled":false}],"operator":"and"}]#JHUTransferIssuer:*
 
 
+Export failed: SharePoint upload failed (406): {"error":{"code":"-1, Microsoft.SharePoint.Client.ClientServiceException","message":"The HTTP header ACCEPT is missing or its value is invalid."}}
+
