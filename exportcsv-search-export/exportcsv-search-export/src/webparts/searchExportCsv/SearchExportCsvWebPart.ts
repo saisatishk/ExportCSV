@@ -2175,12 +2175,17 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
     const fileArg = encodeURIComponent(fileName);
     const endpoint = `${webUrl}/_api/web/GetFolderByServerRelativeUrl('${folderArg}')/Files/add(url='${fileArg}',overwrite=true)`;
 
+    // SharePoint REST is picky about the Accept header on some tenants/sites.
+    // Use the verbose JSON accept to avoid 406 Not Acceptable.
+    const bytes = new Blob([content], { type: 'text/csv;charset=utf-8' });
+    const arrayBuffer = await bytes.arrayBuffer();
+
     const res: SPHttpClientResponse = await this.context.spHttpClient.post(endpoint, SPHttpClient.configurations.v1, {
       headers: {
-        Accept: 'application/json;odata=nometadata',
-        'Content-Type': 'text/csv;charset=utf-8'
+        Accept: 'application/json;odata=verbose',
+        'Content-Type': 'application/octet-stream'
       },
-      body: content
+      body: arrayBuffer
     });
 
     if (!res.ok) {
