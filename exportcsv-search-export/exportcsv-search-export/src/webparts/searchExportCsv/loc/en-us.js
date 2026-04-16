@@ -8,6 +8,8 @@ define([], function() {
     "CsvFileNameDescription": "Optional. The downloaded file will be saved as <name>.csv. Invalid characters are removed. Browsers control the save location and cannot overwrite existing files on disk.",
     "CsvDateColumnsLabel": "Date columns (optional)",
     "CsvDateColumnsDescription": "Comma-separated managed property names used for format those columns as MM/dd/yyyy in the CSV, and filter Filed > days when given field-days.",
+    "SharePointLibraryUrlLabel": "SharePoint library/folder URL (upload destination)",
+    "SharePointLibraryUrlDescription": "Optional. If set, the CSV is uploaded to this library/folder instead of downloaded. Paste the library URL, a folder URL, or a library view URL (e.g. .../Forms/AllItems.aspx).",
     "UseSearchUrlForFiltersLabel": "Use Search URL for filters and keywords",
     "SearchUrlLabel": "Search page URL",
     "SearchUrlDescription": "When \u201cUse Search URL for filters and keywords\u201d is on, paste a full or relative.",

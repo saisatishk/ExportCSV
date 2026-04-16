@@ -7,6 +7,8 @@ declare interface ISearchExportCsvWebPartStrings {
   CsvFileNameDescription: string;
   CsvDateColumnsLabel: string;
   CsvDateColumnsDescription: string;
+  SharePointLibraryUrlLabel: string;
+  SharePointLibraryUrlDescription: string;
   UseSearchUrlForFiltersLabel: string;
   SearchUrlLabel: string;
   SearchUrlDescription: string;

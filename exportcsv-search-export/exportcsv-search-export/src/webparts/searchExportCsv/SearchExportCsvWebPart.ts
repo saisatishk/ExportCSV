@@ -58,6 +58,14 @@ export type ISearchExportCsvWebPartProps = {
   csvDateColumns?: string;
   /** CSV file name (without extension). Download uses `<name>.csv`. */
   csvFileName?: string;
+  /**
+   * Optional SharePoint library/folder URL to upload the CSV to (instead of browser download).
+   * Examples:
+   * - https://contoso.sharepoint.com/sites/Site/Shared%20Documents
+   * - /sites/Site/Shared%20Documents/Exports
+   * - https://contoso.sharepoint.com/sites/Site/Shared%20Documents/Forms/AllItems.aspx
+   */
+  sharePointLibraryUrl?: string;
   /** When true, read `k`, `q`, `f`, … from `searchUrl` instead of the current page URL. */
   useSearchUrlForFilters?: boolean;
   /** Page URL whose query/hash contains the PnP search filters (copy from browser on the search page). */
@@ -533,7 +541,15 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
           }
         }
 
-        this._downloadCsv(this._resolveCsvDownloadFileName(), `\uFEFF${csvLines.join('\r\n')}\r\n`);
+        const fileName = this._resolveCsvDownloadFileName();
+        const csvContent = `\uFEFF${csvLines.join('\r\n')}\r\n`;
+        const uploadFolder = this._tryResolveSharePointUploadFolder(this.properties.sharePointLibraryUrl);
+        const didUpload = !!uploadFolder;
+        if (didUpload) {
+          await this._uploadCsvToSharePointFolder(uploadFolder!, fileName, csvContent);
+        } else {
+          this._downloadCsv(fileName, csvContent);
+        }
         if (this.properties.debugApi && lastDebug) {
           status.textContent =
             `Exported ${exported} rows ` +
@@ -2106,6 +2122,73 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
     URL.revokeObjectURL(url);
   }
 
+  private _tryResolveSharePointUploadFolder(libraryOrFolderUrl: string | undefined): string | undefined {
+    const raw = (libraryOrFolderUrl || '').trim();
+    if (!raw) return undefined;
+
+    try {
+      const base = typeof window !== 'undefined' ? window.location.origin : 'https://example.invalid';
+      const u = new URL(raw, base);
+      let path = u.pathname || '';
+
+      // Handle typical library UI URLs, e.g. ".../Shared Documents/Forms/AllItems.aspx"
+      const formsIdx = path.toLowerCase().indexOf('/forms/');
+      if (formsIdx >= 0) {
+        path = path.substring(0, formsIdx);
+      }
+
+      // If someone pasted a direct .aspx page URL, drop the page name.
+      const lowerPath = path.toLowerCase();
+      if (lowerPath.length >= 5 && lowerPath.lastIndexOf('.aspx') === lowerPath.length - 5) {
+        const lastSlash = path.lastIndexOf('/');
+        if (lastSlash > 0) {
+          path = path.substring(0, lastSlash);
+        }
+      }
+
+      // Trim trailing slash.
+      while (path.length > 1 && path.charAt(path.length - 1) === '/') {
+        path = path.substring(0, path.length - 1);
+      }
+
+      path = decodeURIComponent(path);
+      if (path.charAt(0) !== '/') {
+        path = '/' + path;
+      }
+      return path;
+    } catch {
+      return undefined;
+    }
+  }
+
+  private async _uploadCsvToSharePointFolder(folderServerRelativePath: string, fileName: string, content: string): Promise<void> {
+    const folder = (folderServerRelativePath || '').trim();
+    if (!folder) {
+      throw new Error('SharePoint upload folder path is empty.');
+    }
+
+    const webUrl = this.context.pageContext.web.absoluteUrl.replace(/\/$/, '');
+    const normalizedFolder = folder.charAt(0) === '/' ? folder : `/${folder}`;
+
+    // Note: GetFolderByServerRelativeUrl expects the server-relative path with slashes.
+    const folderArg = encodeURIComponent(normalizedFolder).replace(/%2F/g, '/');
+    const fileArg = encodeURIComponent(fileName);
+    const endpoint = `${webUrl}/_api/web/GetFolderByServerRelativeUrl('${folderArg}')/Files/add(url='${fileArg}',overwrite=true)`;
+
+    const res: SPHttpClientResponse = await this.context.spHttpClient.post(endpoint, SPHttpClient.configurations.v1, {
+      headers: {
+        Accept: 'application/json;odata=nometadata',
+        'Content-Type': 'text/csv;charset=utf-8'
+      },
+      body: content
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`SharePoint upload failed (${res.status}): ${text}`);
+    }
+  }
+
   /**
    * Resolve the CSV download file name from web part properties.
    *
@@ -2789,6 +2872,11 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
                 PropertyPaneTextField('csvDateColumns', {
                   label: strings.CsvDateColumnsLabel,
                   description: strings.CsvDateColumnsDescription,
+                  multiline: true
+                }),
+                PropertyPaneTextField('sharePointLibraryUrl', {
+                  label: strings.SharePointLibraryUrlLabel,
+                  description: strings.SharePointLibraryUrlDescription,
                   multiline: true
                 }),
                 PropertyPaneToggle('useSearchUrlForFilters', {
