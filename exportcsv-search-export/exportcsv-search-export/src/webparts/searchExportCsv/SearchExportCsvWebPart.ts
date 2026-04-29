@@ -886,10 +886,20 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
     try {
       const pageUrl = new URL(this._getEffectiveFilterUrlHref());
       const rawHash = (pageUrl.hash || '').replace(/^#/, '').trim();
-      if (rawHash && rawHash.indexOf('=') === -1) {
-        const decoded = decodeURIComponent(rawHash);
-        if (decoded && decoded.charAt(0) !== '[' && decoded.charAt(0) !== '{') {
-          return { value: decoded, origin: `${originTag} (#)` };
+      if (rawHash) {
+        const looksLikeHashParams =
+          rawHash.indexOf('&') >= 0 ||
+          rawHash.indexOf('?') >= 0 ||
+          /^(k|q|query|keywords)=/i.test(rawHash);
+
+        // If the hash does NOT look like a query-string fragment, treat it as raw KQL.
+        // This supports URLs like:
+        //   /SitePages/Search.aspx#SendToWireDashboard=Yes AND -NextStep=Approved
+        if (!looksLikeHashParams) {
+          const decoded = decodeURIComponent(rawHash);
+          if (decoded && decoded.charAt(0) !== '[' && decoded.charAt(0) !== '{') {
+            return { value: decoded, origin: `${originTag} (#)` };
+          }
         }
       }
     } catch {
@@ -923,7 +933,11 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
     });
 
     const rawHash = (pageUrl.hash || '').replace(/^#/, '');
-    if (rawHash && rawHash.indexOf('=') !== -1) {
+    const shouldParseHashAsParams =
+      !!rawHash &&
+      (rawHash.indexOf('&') >= 0 || rawHash.indexOf('?') >= 0 || /^(k|q|query|keywords|f|sourceid)=/i.test(rawHash));
+
+    if (shouldParseHashAsParams) {
       try {
         const qp = rawHash.indexOf('?') >= 0 ? rawHash.split('?').slice(1).join('?') : rawHash;
         const hp = new URLSearchParams(qp);
@@ -2175,15 +2189,16 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
     const fileArg = encodeURIComponent(fileName);
     const endpoint = `${webUrl}/_api/web/GetFolderByServerRelativeUrl('${folderArg}')/Files/add(url='${fileArg}',overwrite=true)`;
 
-    // SharePoint REST is picky about the Accept header on some tenants/sites.
-    // Use the verbose JSON accept to avoid 406 Not Acceptable.
+    // SharePoint REST can be very strict about the Accept header on some tenants/sites.
+    // Use the classic verbose JSON accept format and include an odata-version hint.
     const bytes = new Blob([content], { type: 'text/csv;charset=utf-8' });
     const arrayBuffer = await bytes.arrayBuffer();
 
     const res: SPHttpClientResponse = await this.context.spHttpClient.post(endpoint, SPHttpClient.configurations.v1, {
       headers: {
-        Accept: 'application/json;odata=verbose',
-        'Content-Type': 'application/octet-stream'
+        Accept: 'application/json; odata=verbose',
+        'Content-Type': 'application/octet-stream',
+        'odata-version': '3.0'
       },
       body: arrayBuffer
     });
