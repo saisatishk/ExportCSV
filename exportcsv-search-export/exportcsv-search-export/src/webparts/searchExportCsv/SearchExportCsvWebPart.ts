@@ -2931,6 +2931,29 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
       }
     }
 
+    // Some pages show results through query/template pipelines that differ from a strict SourceId call.
+    // If everything is still empty, retry once without SourceId while keeping Querytext/refiners.
+    if (ex.rows.length === 0) {
+      const requestBodyNoSource: Record<string, unknown> = { ...requestBody };
+      delete requestBodyNoSource.SourceId;
+      const payloadNoSource = { request: requestBodyNoSource };
+      try {
+        let jsonNoSource: unknown;
+        try {
+          jsonNoSource = await this._postSearchPostquery(postUrl, payloadNoSource, 'nometadata');
+        } catch {
+          jsonNoSource = await this._postSearchPostquery(postUrl, payloadNoSource, 'verbose');
+        }
+        const exNoSource = this._extractRowsFromSearchJson(jsonNoSource, colKeys);
+        if (exNoSource.rows.length > 0) {
+          ex = exNoSource;
+          transport = `${transport};withoutSourceIdFallback`;
+        }
+      } catch {
+        // keep prior extraction
+      }
+    }
+
     return {
       rows: ex.rows,
       lastDocId: ex.lastDocId,
