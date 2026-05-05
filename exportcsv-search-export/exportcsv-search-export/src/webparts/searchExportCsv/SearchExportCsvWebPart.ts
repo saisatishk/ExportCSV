@@ -278,6 +278,7 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
       odataAttempt: string;
       jsonTopKeys: string;
       transport: string;
+      postedNormalizedQuerytext: string;
     },
     ctx: {
       effectiveQuery: string;
@@ -410,8 +411,7 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
       let queryBase = liveQuery.value.trim();
       const sourceId = liveSource.value.trim();
       const filterKql = liveFilterParts.filterKql;
-      const refinementFql = (liveFilterParts.refinementFql || '').trim();
-      const refinementFiltersPayload = refinementFql ? [refinementFql] : undefined;
+      let refinementFql = (liveFilterParts.refinementFql || '').trim();
 
       if (filterKql) {
         queryBase = queryBase ? `(${queryBase}) AND (${filterKql})` : filterKql;
@@ -423,6 +423,11 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
         // Also note: we must handle pagination separately to avoid generating invalid `()` expressions.
         queryBase = '*';
       }
+
+      const folded = this._foldSingleRefinableRefinementIntoQueryBase(queryBase, refinementFql || undefined);
+      queryBase = folded.queryBase;
+      refinementFql = folded.refinementFqlRemaining || '';
+      const refinementFiltersPayload = refinementFql ? [refinementFql] : undefined;
       if (!sourceId) {
         showError(strings.SourceIdRequiredError);
         return;
@@ -463,6 +468,7 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
           odataAttempt: string;
           jsonTopKeys: string;
           transport: string;
+          postedNormalizedQuerytext: string;
         } | undefined;
 
         const csvLines: string[] = [];
@@ -551,9 +557,13 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
           this._downloadCsv(fileName, csvContent);
         }
         if (this.properties.debugApi && lastDebug) {
+          const normPreview =
+            lastDebug.postedNormalizedQuerytext.length > 300
+              ? `${lastDebug.postedNormalizedQuerytext.slice(0, 300)}…`
+              : lastDebug.postedNormalizedQuerytext;
           status.textContent =
             `Exported ${exported} rows ` +
-            `(debug: sentQuery="${lastDebug.sentQueryText}", sentRefinement="${lastDebug.sentRefinementFilters}", sentSourceId=${lastDebug.sentSourceId}, ` +
+            `(debug: sentQuery="${lastDebug.sentQueryText}", postedNorm="${normPreview}", sentRefinement="${lastDebug.sentRefinementFilters}", sentSourceId=${lastDebug.sentSourceId}, ` +
             `extractedRows=${lastDebug.extractedRows}, ` +
             `tableRowsIsArray=${lastDebug.tableRowsIsArray}, tableRowsHasResultsArray=${lastDebug.tableRowsHasResultsArray}, tableRowsResultsLength=${lastDebug.tableRowsResultsLength ?? 'n/a'}, ` +
             `transport=${lastDebug.transport}, relevantHow=${lastDebug.relevantHow}, odata=${lastDebug.odataAttempt}, jsonKeys=${lastDebug.jsonTopKeys}, ` +
@@ -2314,6 +2324,46 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
   }
 
   /**
+   * Fold a single `Refinable*:"..."` refinement filter into keyword KQL so Search REST gets one Querytext
+   * (PnP AND semantics). Using RefinementFilters alongside Querytext often returns 0 rows while the UI shows hits.
+   *
+   * - **Where used**: export button handler before `_fetchExportPage`.
+   * - **Skips**: FileType/Author/date-style refiners (still sent via RefinementFilters).
+   */
+  private _foldSingleRefinableRefinementIntoQueryBase(
+    queryBase: string,
+    refinementFql: string | undefined
+  ): { queryBase: string; refinementFqlRemaining: string | undefined } {
+    const qb = (queryBase || '').trim();
+    const rfIn = (refinementFql || '').trim();
+    if (!rfIn || !qb || qb === '*') {
+      return { queryBase: qb, refinementFqlRemaining: rfIn || undefined };
+    }
+
+    const rf = rfIn.replace(/[\u201c\u201d\u201e\u201f]/g, '"');
+    const m = rf.match(/^([A-Za-z0-9_]+):"(.+)"$/);
+    if (!m) {
+      return { queryBase: qb, refinementFqlRemaining: rfIn };
+    }
+
+    const mp = m[1];
+    if (!/^Refinable(String|Int|Double|Decimal)/i.test(mp)) {
+      return { queryBase: qb, refinementFqlRemaining: rfIn };
+    }
+
+    const rawOperand = m[2];
+    const operand =
+      rawOperand.indexOf('ǂǂ') === 0 ? this._tokenFromPnpFilterValueField(rawOperand) : rawOperand;
+    const esc = operand.replace(/\\/g, '').replace(/"/g, '\\"');
+    const refKql = `${mp}:"${esc}"`;
+    const normBase = this._normalizeKqlPropertyEqSyntax(qb);
+    return {
+      queryBase: `(${normBase}) AND (${refKql})`,
+      refinementFqlRemaining: undefined
+    };
+  }
+
+  /**
    * First-level JSON keys for diagnostics.
    *
    * - **Why**: SharePoint search payloads differ across OData modes/versions; keys help debug extraction.
@@ -2665,7 +2715,6 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
    * - **Fallbacks**:
    *   - retries with other OData mode (nometadata/verbose)
    *   - retries RefinementFilters as string when one filter is present
-   *   - merges one `Prop:"value"` refiner into Querytext when POST still returns 0 rows
    *   - retries with empty Querytext when refiners-only + `*`
    *   - optional GET `search/query` fallback on first page
    */
@@ -2702,11 +2751,14 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
       odataAttempt: string;
       jsonTopKeys: string;
       transport: string;
+      /** Keyword/query portion sent as POST Querytext after `=`→`:` normalization (before escaping). */
+      postedNormalizedQuerytext: string;
     };
   }> {
     const webUrl = params.webUrl.replace(/\/$/, '');
     const postUrl = `${webUrl}/_api/search/postquery`;
-    const safeQuery = this._escapeKqlQuotes(this._normalizeKqlPropertyEqSyntax(params.queryText));
+    const normalizedForPost = this._normalizeKqlPropertyEqSyntax(params.queryText);
+    const safeQuery = this._escapeKqlQuotes(normalizedForPost);
     const sourceId = this._formatSourceIdForSearchApi(params.sourceId);
     const selectProps =
       params.selectPropertiesList && params.selectPropertiesList.length > 0
@@ -2814,73 +2866,6 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
       }
     }
 
-    // PnP ANDs keyword KQL with refiners; some tenants return 0 rows when the refiner is only in
-    // RefinementFilters. Merge `Prop:"value"` into normalized Querytext; try decoded label + raw token,
-    // and optionally EnableQueryRules (PnP UI may behave closer with rules on).
-    if (ex.rows.length === 0 && refinementList.length === 1) {
-      const rfOnly = refinementList[0].replace(/[\u201c\u201d\u201e\u201f]/g, '"').trim();
-      const m = rfOnly.match(/^([A-Za-z0-9_]+):"(.+)"$/);
-      if (m) {
-        const mp = m[1];
-        const rawOperand = m[2];
-        const decodedOperand =
-          rawOperand.indexOf('ǂǂ') === 0 ? this._tokenFromPnpFilterValueField(rawOperand) : rawOperand;
-
-        const baseNorm = this._normalizeKqlPropertyEqSyntax((params.queryText || '').trim());
-
-        const operandsToTry: Array<{ tag: string; value: string }> = [];
-        operandsToTry.push({ tag: 'decoded', value: decodedOperand });
-        if (decodedOperand !== rawOperand) {
-          operandsToTry.push({ tag: 'token', value: rawOperand });
-        }
-
-        const tryMergedOnce = async (combinedRaw: string, rulesOn: boolean, suffix: string): Promise<boolean> => {
-          const requestBodyMerged: Record<string, unknown> = {
-            ...requestBody,
-            Querytext: this._escapeKqlQuotes(combinedRaw),
-            EnableQueryRules: rulesOn
-          };
-          delete requestBodyMerged.RefinementFilters;
-          const payloadMerged = { request: requestBodyMerged };
-          try {
-            let jsonMerged: unknown;
-            try {
-              jsonMerged = await this._postSearchPostquery(postUrl, payloadMerged, 'nometadata');
-            } catch {
-              jsonMerged = await this._postSearchPostquery(postUrl, payloadMerged, 'verbose');
-            }
-            const exMerged = this._extractRowsFromSearchJson(jsonMerged, colKeys);
-            if (exMerged.rows.length > 0) {
-              json = jsonMerged;
-              ex = exMerged;
-              transport = `${transport};refinerMergedIntoQuerytext:${suffix}`;
-              return true;
-            }
-          } catch {
-            // keep prior extraction
-          }
-          return false;
-        };
-
-        for (let oi = 0; oi < operandsToTry.length; oi++) {
-          const op = operandsToTry[oi];
-          const escapedOperand = op.value.replace(/\\/g, '').replace(/"/g, '\\"');
-          const refKql = `${mp}:"${escapedOperand}"`;
-          const combinedRaw =
-            baseNorm && baseNorm !== '*' ? `(${baseNorm}) AND (${refKql})` : refKql;
-
-          // eslint-disable-next-line no-await-in-loop -- intentional sequential fallback chain
-          if (await tryMergedOnce(combinedRaw, false, `${op.tag}`)) {
-            break;
-          }
-          // eslint-disable-next-line no-await-in-loop
-          if (await tryMergedOnce(combinedRaw, true, `${op.tag};rules`)) {
-            break;
-          }
-        }
-      }
-    }
-
     // With refiners only, some tenants return TotalRows=0 when Querytext is `*`; empty matches "all" + refinement.
     if (ex.rows.length === 0 && refinementList.length > 0 && (params.queryText || '').trim() === '*') {
       const requestBodyNoText: Record<string, unknown> = { ...requestBody, Querytext: '' };
@@ -2943,7 +2928,8 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
         relevantHow: ex.relevantHow,
         odataAttempt,
         jsonTopKeys: ex.jsonTopKeys,
-        transport
+        transport,
+        postedNormalizedQuerytext: normalizedForPost
       }
     };
   }
