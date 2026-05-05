@@ -2891,8 +2891,10 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
       }
     }
 
-    // With refiners only, some tenants return TotalRows=0 when Querytext is `*`; empty matches "all" + refinement.
-    if (ex.rows.length === 0 && refinementList.length > 0 && (params.queryText || '').trim() === '*') {
+    // With refiners, some tenants return 0 rows when Querytext is strict; empty often matches "all" + refinement.
+    // Retry refiners-only when original Querytext was `*` OR any non-empty query text.
+    const originalQueryTrimmed = (params.queryText || '').trim();
+    if (ex.rows.length === 0 && refinementList.length > 0 && (originalQueryTrimmed === '*' || originalQueryTrimmed.length > 0)) {
       transport = `${transport};tryQuerytextEmptyWithRefiners`;
       const requestBodyNoText: Record<string, unknown> = { ...requestBody, Querytext: '' };
       const payloadNoText = { request: requestBodyNoText };
