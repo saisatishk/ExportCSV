@@ -2838,6 +2838,56 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
       }
     }
 
+    // Some tenants return 0 rows when RefinementFilters are used, but return matches when the
+    // same condition is expressed in Querytext KQL. Retry once for simple `Prop:"value"` refiners.
+    if (ex.rows.length === 0 && refinementList.length > 0) {
+      const kqlPieces: string[] = [];
+      for (let i = 0; i < refinementList.length; i++) {
+        const rf = refinementList[i];
+        const m = rf.match(/^([A-Za-z0-9_]+):"(.+)"$/);
+        if (!m) {
+          continue;
+        }
+        const mp = m[1];
+        const operand = m[2];
+        const tokenOrValue =
+          operand.indexOf('ǂǂ') === 0 ? this._tokenFromPnpFilterValueField(operand) : operand;
+        const esc = tokenOrValue.replace(/"/g, '\\"').trim();
+        if (!esc) {
+          continue;
+        }
+        kqlPieces.push(`${mp}:"${esc}"`);
+      }
+
+      if (kqlPieces.length > 0) {
+        const qBase = (safeQuery || '').trim();
+        const qExtra = kqlPieces.length === 1 ? kqlPieces[0] : `(${kqlPieces.join(' AND ')})`;
+        const qCombined = qBase ? `(${qBase}) AND (${qExtra})` : qExtra;
+        const requestBodyKqlFallback: Record<string, unknown> = {
+          ...requestBody,
+          Querytext: qCombined
+        };
+        delete requestBodyKqlFallback.RefinementFilters;
+        const payloadKqlFallback = { request: requestBodyKqlFallback };
+        try {
+          let jsonKqlFallback: unknown;
+          try {
+            jsonKqlFallback = await this._postSearchPostquery(postUrl, payloadKqlFallback, 'nometadata');
+          } catch {
+            jsonKqlFallback = await this._postSearchPostquery(postUrl, payloadKqlFallback, 'verbose');
+          }
+          const exKqlFallback = this._extractRowsFromSearchJson(jsonKqlFallback, colKeys);
+          if (exKqlFallback.rows.length > 0) {
+            json = jsonKqlFallback;
+            ex = exKqlFallback;
+            transport = `${transport};refinerAsKqlFallback`;
+          }
+        } catch {
+          // keep prior extraction
+        }
+      }
+    }
+
     // With refiners only, some tenants return TotalRows=0 when Querytext is `*`; empty matches "all" + refinement.
     if (ex.rows.length === 0 && refinementList.length > 0 && (params.queryText || '').trim() === '*') {
       const requestBodyNoText: Record<string, unknown> = { ...requestBody, Querytext: '' };
