@@ -2778,6 +2778,7 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
 
     // Some tenants accept RefinementFilters as a single FQL string; array form can yield 0 rows.
     if (ex.rows.length === 0 && refinementList.length === 1) {
+      transport = `${transport};tryRefinementFiltersAsString`;
       const requestBodyStr: Record<string, unknown> = { ...requestBody, RefinementFilters: refinementList[0] };
       const payloadStr = { request: requestBodyStr };
       try {
@@ -2791,7 +2792,7 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
         if (exStr.rows.length > 0) {
           json = jsonStr;
           ex = exStr;
-          transport = `${transport};refinementFiltersAsString`;
+          transport = `${transport};refinementFiltersAsStringHit`;
         }
       } catch {
         // keep first result
@@ -2814,6 +2815,7 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
 
       const changed = decodedRefinementList.some((rf, i) => rf !== refinementList[i]);
       if (changed) {
+        transport = `${transport};tryDecodedRefinerToken`;
         const requestBodyDecodedRefiners: Record<string, unknown> = {
           ...requestBody,
           RefinementFilters: decodedRefinementList
@@ -2830,7 +2832,7 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
           if (exDecoded.rows.length > 0) {
             json = jsonDecoded;
             ex = exDecoded;
-            transport = `${transport};decodedRefinerTokenFallback`;
+            transport = `${transport};decodedRefinerTokenFallbackHit`;
           }
         } catch {
           // keep prior extraction
@@ -2860,6 +2862,7 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
       }
 
       if (kqlPieces.length > 0) {
+        transport = `${transport};tryRefinerAsKql`;
         const qBase = (safeQuery || '').trim();
         const qExtra = kqlPieces.length === 1 ? kqlPieces[0] : `(${kqlPieces.join(' AND ')})`;
         const qCombined = qBase ? `(${qBase}) AND (${qExtra})` : qExtra;
@@ -2880,7 +2883,7 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
           if (exKqlFallback.rows.length > 0) {
             json = jsonKqlFallback;
             ex = exKqlFallback;
-            transport = `${transport};refinerAsKqlFallback`;
+            transport = `${transport};refinerAsKqlFallbackHit`;
           }
         } catch {
           // keep prior extraction
@@ -2890,6 +2893,7 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
 
     // With refiners only, some tenants return TotalRows=0 when Querytext is `*`; empty matches "all" + refinement.
     if (ex.rows.length === 0 && refinementList.length > 0 && (params.queryText || '').trim() === '*') {
+      transport = `${transport};tryQuerytextEmptyWithRefiners`;
       const requestBodyNoText: Record<string, unknown> = { ...requestBody, Querytext: '' };
       const payloadNoText = { request: requestBodyNoText };
       try {
@@ -2903,7 +2907,7 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
         if (exNoText.rows.length > 0) {
           json = jsonNoText;
           ex = exNoText;
-          transport = `${transport};querytextEmptyWithRefiners`;
+          transport = `${transport};querytextEmptyWithRefinersHit`;
         }
       } catch {
         // keep prior extraction
@@ -2912,6 +2916,7 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
 
     const allowGetFallback = params.enableGetFallbackWhenEmpty !== false;
     if (ex.rows.length === 0 && allowGetFallback) {
+      transport = `${transport};tryGetSearchQuery`;
       try {
         const jsonGet = await this._getSearchQueryViaGet(
           webUrl,
@@ -2924,7 +2929,7 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
         const exGet = this._extractRowsFromSearchJson(jsonGet, colKeys);
         if (exGet.rows.length > 0) {
           ex = exGet;
-          transport = 'GET /_api/search/query';
+          transport = `${transport};getSearchQueryHit`;
         }
       } catch {
         // keep postquery extraction (likely still empty)
@@ -2934,6 +2939,7 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
     // Some pages show results through query/template pipelines that differ from a strict SourceId call.
     // If everything is still empty, retry once without SourceId while keeping Querytext/refiners.
     if (ex.rows.length === 0) {
+      transport = `${transport};tryWithoutSourceId`;
       const requestBodyNoSource: Record<string, unknown> = { ...requestBody };
       delete requestBodyNoSource.SourceId;
       const payloadNoSource = { request: requestBodyNoSource };
@@ -2947,7 +2953,7 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
         const exNoSource = this._extractRowsFromSearchJson(jsonNoSource, colKeys);
         if (exNoSource.rows.length > 0) {
           ex = exNoSource;
-          transport = `${transport};withoutSourceIdFallback`;
+          transport = `${transport};withoutSourceIdFallbackHit`;
         }
       } catch {
         // keep prior extraction
