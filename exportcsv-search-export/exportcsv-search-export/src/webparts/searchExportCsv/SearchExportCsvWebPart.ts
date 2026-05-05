@@ -2650,6 +2650,7 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
    * - **Fallbacks**:
    *   - retries with other OData mode (nometadata/verbose)
    *   - retries RefinementFilters as string when one filter is present
+   *   - merges one `Prop:"value"` refiner into Querytext when POST still returns 0 rows
    *   - retries with empty Querytext when refiners-only + `*`
    *   - optional GET `search/query` fallback on first page
    */
@@ -2795,6 +2796,47 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
         }
       } catch {
         // keep first result
+      }
+    }
+
+    // PnP ANDs keyword KQL with refiners; some tenants return 0 rows when the refiner is only in
+    // RefinementFilters. Merge a simple `Prop:"value"` refiner into Querytext once and drop RefinementFilters.
+    if (ex.rows.length === 0 && refinementList.length === 1) {
+      const rfOnly = refinementList[0];
+      const m = rfOnly.match(/^([A-Za-z0-9_]+):"(.+)"$/);
+      if (m) {
+        const mp = m[1];
+        let operand = m[2];
+        if (operand.indexOf('ǂǂ') === 0) {
+          operand = this._tokenFromPnpFilterValueField(operand);
+        }
+        const escapedOperand = operand.replace(/\\/g, '').replace(/"/g, '\\"');
+        const refKql = `${mp}:"${escapedOperand}"`;
+        const baseRaw = (params.queryText || '').trim();
+        const combinedRaw =
+          baseRaw && baseRaw !== '*' ? `(${baseRaw}) AND (${refKql})` : refKql;
+        const requestBodyMerged: Record<string, unknown> = {
+          ...requestBody,
+          Querytext: this._escapeKqlQuotes(combinedRaw)
+        };
+        delete requestBodyMerged.RefinementFilters;
+        const payloadMerged = { request: requestBodyMerged };
+        try {
+          let jsonMerged: unknown;
+          try {
+            jsonMerged = await this._postSearchPostquery(postUrl, payloadMerged, 'nometadata');
+          } catch {
+            jsonMerged = await this._postSearchPostquery(postUrl, payloadMerged, 'verbose');
+          }
+          const exMerged = this._extractRowsFromSearchJson(jsonMerged, colKeys);
+          if (exMerged.rows.length > 0) {
+            json = jsonMerged;
+            ex = exMerged;
+            transport = `${transport};refinerMergedIntoQuerytext`;
+          }
+        } catch {
+          // keep prior extraction
+        }
       }
     }
 
