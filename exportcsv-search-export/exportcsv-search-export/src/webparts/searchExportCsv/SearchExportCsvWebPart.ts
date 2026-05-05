@@ -2798,6 +2798,46 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
       }
     }
 
+    // Some environments expose PnP refiner values as hex-like tokens (e.g. ǂǂ436170...).
+    // If that yields 0 rows, retry once with decoded text operands.
+    if (ex.rows.length === 0 && refinementList.length > 0) {
+      const decodedRefinementList = refinementList.map((rf) => {
+        const m = rf.match(/^([A-Za-z0-9_]+):"(.+)"$/);
+        if (!m) return rf;
+        const mp = m[1];
+        const operand = m[2];
+        if (operand.indexOf('ǂǂ') !== 0) return rf;
+        const decoded = this._tokenFromPnpFilterValueField(operand);
+        if (!decoded || decoded === operand) return rf;
+        return `${mp}:"${this._escapeFqlEqualsArg(decoded)}"`;
+      });
+
+      const changed = decodedRefinementList.some((rf, i) => rf !== refinementList[i]);
+      if (changed) {
+        const requestBodyDecodedRefiners: Record<string, unknown> = {
+          ...requestBody,
+          RefinementFilters: decodedRefinementList
+        };
+        const payloadDecodedRefiners = { request: requestBodyDecodedRefiners };
+        try {
+          let jsonDecoded: unknown;
+          try {
+            jsonDecoded = await this._postSearchPostquery(postUrl, payloadDecodedRefiners, 'nometadata');
+          } catch {
+            jsonDecoded = await this._postSearchPostquery(postUrl, payloadDecodedRefiners, 'verbose');
+          }
+          const exDecoded = this._extractRowsFromSearchJson(jsonDecoded, colKeys);
+          if (exDecoded.rows.length > 0) {
+            json = jsonDecoded;
+            ex = exDecoded;
+            transport = `${transport};decodedRefinerTokenFallback`;
+          }
+        } catch {
+          // keep prior extraction
+        }
+      }
+    }
+
     // With refiners only, some tenants return TotalRows=0 when Querytext is `*`; empty matches "all" + refinement.
     if (ex.rows.length === 0 && refinementList.length > 0 && (params.queryText || '').trim() === '*') {
       const requestBodyNoText: Record<string, unknown> = { ...requestBody, Querytext: '' };
