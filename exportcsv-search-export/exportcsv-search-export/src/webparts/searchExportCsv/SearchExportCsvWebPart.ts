@@ -2778,7 +2778,6 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
 
     // Some tenants accept RefinementFilters as a single FQL string; array form can yield 0 rows.
     if (ex.rows.length === 0 && refinementList.length === 1) {
-      transport = `${transport};tryRefinementFiltersAsString`;
       const requestBodyStr: Record<string, unknown> = { ...requestBody, RefinementFilters: refinementList[0] };
       const payloadStr = { request: requestBodyStr };
       try {
@@ -2792,110 +2791,15 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
         if (exStr.rows.length > 0) {
           json = jsonStr;
           ex = exStr;
-          transport = `${transport};refinementFiltersAsStringHit`;
+          transport = `${transport};refinementFiltersAsString`;
         }
       } catch {
         // keep first result
       }
     }
 
-    // Some environments expose PnP refiner values as hex-like tokens (e.g. ǂǂ436170...).
-    // If that yields 0 rows, retry once with decoded text operands.
-    if (ex.rows.length === 0 && refinementList.length > 0) {
-      const decodedRefinementList = refinementList.map((rf) => {
-        const m = rf.match(/^([A-Za-z0-9_]+):"(.+)"$/);
-        if (!m) return rf;
-        const mp = m[1];
-        const operand = m[2];
-        if (operand.indexOf('ǂǂ') !== 0) return rf;
-        const decoded = this._tokenFromPnpFilterValueField(operand);
-        if (!decoded || decoded === operand) return rf;
-        return `${mp}:"${this._escapeFqlEqualsArg(decoded)}"`;
-      });
-
-      const changed = decodedRefinementList.some((rf, i) => rf !== refinementList[i]);
-      if (changed) {
-        transport = `${transport};tryDecodedRefinerToken`;
-        const requestBodyDecodedRefiners: Record<string, unknown> = {
-          ...requestBody,
-          RefinementFilters: decodedRefinementList
-        };
-        const payloadDecodedRefiners = { request: requestBodyDecodedRefiners };
-        try {
-          let jsonDecoded: unknown;
-          try {
-            jsonDecoded = await this._postSearchPostquery(postUrl, payloadDecodedRefiners, 'nometadata');
-          } catch {
-            jsonDecoded = await this._postSearchPostquery(postUrl, payloadDecodedRefiners, 'verbose');
-          }
-          const exDecoded = this._extractRowsFromSearchJson(jsonDecoded, colKeys);
-          if (exDecoded.rows.length > 0) {
-            json = jsonDecoded;
-            ex = exDecoded;
-            transport = `${transport};decodedRefinerTokenFallbackHit`;
-          }
-        } catch {
-          // keep prior extraction
-        }
-      }
-    }
-
-    // Some tenants return 0 rows when RefinementFilters are used, but return matches when the
-    // same condition is expressed in Querytext KQL. Retry once for simple `Prop:"value"` refiners.
-    if (ex.rows.length === 0 && refinementList.length > 0) {
-      const kqlPieces: string[] = [];
-      for (let i = 0; i < refinementList.length; i++) {
-        const rf = refinementList[i];
-        const m = rf.match(/^([A-Za-z0-9_]+):"(.+)"$/);
-        if (!m) {
-          continue;
-        }
-        const mp = m[1];
-        const operand = m[2];
-        const tokenOrValue =
-          operand.indexOf('ǂǂ') === 0 ? this._tokenFromPnpFilterValueField(operand) : operand;
-        const esc = tokenOrValue.replace(/"/g, '\\"').trim();
-        if (!esc) {
-          continue;
-        }
-        kqlPieces.push(`${mp}:"${esc}"`);
-      }
-
-      if (kqlPieces.length > 0) {
-        transport = `${transport};tryRefinerAsKql`;
-        const qBase = (safeQuery || '').trim();
-        const qExtra = kqlPieces.length === 1 ? kqlPieces[0] : `(${kqlPieces.join(' AND ')})`;
-        const qCombined = qBase ? `(${qBase}) AND (${qExtra})` : qExtra;
-        const requestBodyKqlFallback: Record<string, unknown> = {
-          ...requestBody,
-          Querytext: qCombined
-        };
-        delete requestBodyKqlFallback.RefinementFilters;
-        const payloadKqlFallback = { request: requestBodyKqlFallback };
-        try {
-          let jsonKqlFallback: unknown;
-          try {
-            jsonKqlFallback = await this._postSearchPostquery(postUrl, payloadKqlFallback, 'nometadata');
-          } catch {
-            jsonKqlFallback = await this._postSearchPostquery(postUrl, payloadKqlFallback, 'verbose');
-          }
-          const exKqlFallback = this._extractRowsFromSearchJson(jsonKqlFallback, colKeys);
-          if (exKqlFallback.rows.length > 0) {
-            json = jsonKqlFallback;
-            ex = exKqlFallback;
-            transport = `${transport};refinerAsKqlFallbackHit`;
-          }
-        } catch {
-          // keep prior extraction
-        }
-      }
-    }
-
-    // With refiners, some tenants return 0 rows when Querytext is strict; empty often matches "all" + refinement.
-    // Retry refiners-only when original Querytext was `*` OR any non-empty query text.
-    const originalQueryTrimmed = (params.queryText || '').trim();
-    if (ex.rows.length === 0 && refinementList.length > 0 && (originalQueryTrimmed === '*' || originalQueryTrimmed.length > 0)) {
-      transport = `${transport};tryQuerytextEmptyWithRefiners`;
+    // With refiners only, some tenants return TotalRows=0 when Querytext is `*`; empty matches "all" + refinement.
+    if (ex.rows.length === 0 && refinementList.length > 0 && (params.queryText || '').trim() === '*') {
       const requestBodyNoText: Record<string, unknown> = { ...requestBody, Querytext: '' };
       const payloadNoText = { request: requestBodyNoText };
       try {
@@ -2909,7 +2813,7 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
         if (exNoText.rows.length > 0) {
           json = jsonNoText;
           ex = exNoText;
-          transport = `${transport};querytextEmptyWithRefinersHit`;
+          transport = `${transport};querytextEmptyWithRefiners`;
         }
       } catch {
         // keep prior extraction
@@ -2918,7 +2822,6 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
 
     const allowGetFallback = params.enableGetFallbackWhenEmpty !== false;
     if (ex.rows.length === 0 && allowGetFallback) {
-      transport = `${transport};tryGetSearchQuery`;
       try {
         const jsonGet = await this._getSearchQueryViaGet(
           webUrl,
@@ -2931,34 +2834,10 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
         const exGet = this._extractRowsFromSearchJson(jsonGet, colKeys);
         if (exGet.rows.length > 0) {
           ex = exGet;
-          transport = `${transport};getSearchQueryHit`;
+          transport = 'GET /_api/search/query';
         }
       } catch {
         // keep postquery extraction (likely still empty)
-      }
-    }
-
-    // Some pages show results through query/template pipelines that differ from a strict SourceId call.
-    // If everything is still empty, retry once without SourceId while keeping Querytext/refiners.
-    if (ex.rows.length === 0) {
-      transport = `${transport};tryWithoutSourceId`;
-      const requestBodyNoSource: Record<string, unknown> = { ...requestBody };
-      delete requestBodyNoSource.SourceId;
-      const payloadNoSource = { request: requestBodyNoSource };
-      try {
-        let jsonNoSource: unknown;
-        try {
-          jsonNoSource = await this._postSearchPostquery(postUrl, payloadNoSource, 'nometadata');
-        } catch {
-          jsonNoSource = await this._postSearchPostquery(postUrl, payloadNoSource, 'verbose');
-        }
-        const exNoSource = this._extractRowsFromSearchJson(jsonNoSource, colKeys);
-        if (exNoSource.rows.length > 0) {
-          ex = exNoSource;
-          transport = `${transport};withoutSourceIdFallbackHit`;
-        }
-      } catch {
-        // keep prior extraction
       }
     }
 
