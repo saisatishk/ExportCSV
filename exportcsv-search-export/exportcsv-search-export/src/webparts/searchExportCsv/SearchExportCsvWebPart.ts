@@ -2299,6 +2299,21 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
   }
 
   /**
+   * Normalize URL-style property clauses (`Prop=value`, `Prop="phrase"`) to KQL property restrictions
+   * (`Prop:value`, `Prop:"phrase"`). Search REST frequently returns 0 rows when `=` is used instead of `:`.
+   *
+   * - **Where used**: `_fetchExportPage` before building POST/GET query strings.
+   */
+  private _normalizeKqlPropertyEqSyntax(kql: string): string {
+    let s = (kql || '').trim();
+    if (!s) return s;
+    s = s.replace(/[\u201c\u201d\u201e\u201f]/g, '"');
+    s = s.replace(/\b([A-Za-z_][A-Za-z0-9_]*)\s*=\s*"([^"]*)"/g, '$1:"$2"');
+    s = s.replace(/\b([A-Za-z_][A-Za-z0-9_]*)\s*=\s*([^"\s,)]+)/g, '$1:$2');
+    return s;
+  }
+
+  /**
    * First-level JSON keys for diagnostics.
    *
    * - **Why**: SharePoint search payloads differ across OData modes/versions; keys help debug extraction.
@@ -2691,7 +2706,7 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
   }> {
     const webUrl = params.webUrl.replace(/\/$/, '');
     const postUrl = `${webUrl}/_api/search/postquery`;
-    const safeQuery = this._escapeKqlQuotes(params.queryText);
+    const safeQuery = this._escapeKqlQuotes(this._normalizeKqlPropertyEqSyntax(params.queryText));
     const sourceId = this._formatSourceIdForSearchApi(params.sourceId);
     const selectProps =
       params.selectPropertiesList && params.selectPropertiesList.length > 0
@@ -2800,42 +2815,68 @@ export default class SearchExportCsvWebPart extends BaseClientSideWebPart<ISearc
     }
 
     // PnP ANDs keyword KQL with refiners; some tenants return 0 rows when the refiner is only in
-    // RefinementFilters. Merge a simple `Prop:"value"` refiner into Querytext once and drop RefinementFilters.
+    // RefinementFilters. Merge `Prop:"value"` into normalized Querytext; try decoded label + raw token,
+    // and optionally EnableQueryRules (PnP UI may behave closer with rules on).
     if (ex.rows.length === 0 && refinementList.length === 1) {
-      const rfOnly = refinementList[0];
+      const rfOnly = refinementList[0].replace(/[\u201c\u201d\u201e\u201f]/g, '"').trim();
       const m = rfOnly.match(/^([A-Za-z0-9_]+):"(.+)"$/);
       if (m) {
         const mp = m[1];
-        let operand = m[2];
-        if (operand.indexOf('ǂǂ') === 0) {
-          operand = this._tokenFromPnpFilterValueField(operand);
+        const rawOperand = m[2];
+        const decodedOperand =
+          rawOperand.indexOf('ǂǂ') === 0 ? this._tokenFromPnpFilterValueField(rawOperand) : rawOperand;
+
+        const baseNorm = this._normalizeKqlPropertyEqSyntax((params.queryText || '').trim());
+
+        const operandsToTry: Array<{ tag: string; value: string }> = [];
+        operandsToTry.push({ tag: 'decoded', value: decodedOperand });
+        if (decodedOperand !== rawOperand) {
+          operandsToTry.push({ tag: 'token', value: rawOperand });
         }
-        const escapedOperand = operand.replace(/\\/g, '').replace(/"/g, '\\"');
-        const refKql = `${mp}:"${escapedOperand}"`;
-        const baseRaw = (params.queryText || '').trim();
-        const combinedRaw =
-          baseRaw && baseRaw !== '*' ? `(${baseRaw}) AND (${refKql})` : refKql;
-        const requestBodyMerged: Record<string, unknown> = {
-          ...requestBody,
-          Querytext: this._escapeKqlQuotes(combinedRaw)
-        };
-        delete requestBodyMerged.RefinementFilters;
-        const payloadMerged = { request: requestBodyMerged };
-        try {
-          let jsonMerged: unknown;
+
+        const tryMergedOnce = async (combinedRaw: string, rulesOn: boolean, suffix: string): Promise<boolean> => {
+          const requestBodyMerged: Record<string, unknown> = {
+            ...requestBody,
+            Querytext: this._escapeKqlQuotes(combinedRaw),
+            EnableQueryRules: rulesOn
+          };
+          delete requestBodyMerged.RefinementFilters;
+          const payloadMerged = { request: requestBodyMerged };
           try {
-            jsonMerged = await this._postSearchPostquery(postUrl, payloadMerged, 'nometadata');
+            let jsonMerged: unknown;
+            try {
+              jsonMerged = await this._postSearchPostquery(postUrl, payloadMerged, 'nometadata');
+            } catch {
+              jsonMerged = await this._postSearchPostquery(postUrl, payloadMerged, 'verbose');
+            }
+            const exMerged = this._extractRowsFromSearchJson(jsonMerged, colKeys);
+            if (exMerged.rows.length > 0) {
+              json = jsonMerged;
+              ex = exMerged;
+              transport = `${transport};refinerMergedIntoQuerytext:${suffix}`;
+              return true;
+            }
           } catch {
-            jsonMerged = await this._postSearchPostquery(postUrl, payloadMerged, 'verbose');
+            // keep prior extraction
           }
-          const exMerged = this._extractRowsFromSearchJson(jsonMerged, colKeys);
-          if (exMerged.rows.length > 0) {
-            json = jsonMerged;
-            ex = exMerged;
-            transport = `${transport};refinerMergedIntoQuerytext`;
+          return false;
+        };
+
+        for (let oi = 0; oi < operandsToTry.length; oi++) {
+          const op = operandsToTry[oi];
+          const escapedOperand = op.value.replace(/\\/g, '').replace(/"/g, '\\"');
+          const refKql = `${mp}:"${escapedOperand}"`;
+          const combinedRaw =
+            baseNorm && baseNorm !== '*' ? `(${baseNorm}) AND (${refKql})` : refKql;
+
+          // eslint-disable-next-line no-await-in-loop -- intentional sequential fallback chain
+          if (await tryMergedOnce(combinedRaw, false, `${op.tag}`)) {
+            break;
           }
-        } catch {
-          // keep prior extraction
+          // eslint-disable-next-line no-await-in-loop
+          if (await tryMergedOnce(combinedRaw, true, `${op.tag};rules`)) {
+            break;
+          }
         }
       }
     }
