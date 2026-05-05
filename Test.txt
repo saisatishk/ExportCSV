@@ -1,1 +1,13 @@
 /SitePages/Finance-Document-Search.aspx#SendToWireDashboard=Yes AND -NextStep=Approved
+
+
+Exports SharePoint search results to CSV. Keywords: URL (e.g. k, q) or page search box; refiners: `f`.
+Keywords sent as Querytext (resolved): SendToWireDashboard=Yes AND NextStep="Pending Finance Approval"
+Result source ID: 1d6d8f2a-ef9e-4d8f-92b9-0f55db8dd4f9
+Querytext source: Search URL (property) (#) | SourceId source: Property pane
+Refiners for export (URL `f`, other params, or page UI): Search URL (property) (f_574443da-2e4b-4967-bbb5-f425b79bc2c8): RefinableString12:"ǂǂ4361706974616c20446973747269627574696f6e202843434429"
+Effective extra KQL / FQL (export): (FQL Refinement: RefinableString12:"ǂǂ4361706974616c20446973747269627574696f6e202843434429")
+Capital Call Approval
+Cancel
+Exported 0 rows (debug: sentQuery="SendToWireDashboard=Yes AND NextStep="Pending Finance Approval"", sentRefinement="RefinableString12:"ǂǂ4361706974616c20446973747269627574696f6e202843434429"", sentSourceId=1d6d8f2a-ef9e-4d8f-92b9-0f55db8dd4f9, extractedRows=0, tableRowsIsArray=true, tableRowsHasResultsArray=false, tableRowsResultsLength=n/a, transport=postquery:nometadata, relevantHow=deep-scan@visit64, odata=nometadata, jsonKeys=ElapsedTime,PrimaryQueryResult,Properties,SecondaryQueryResults,SpellingSuggestion,TriggeredRules, primaryPath=deep-scan@visit64, relevantDefined=true, totalRowsRaw=number:0
+Distributions
