@@ -2,7 +2,7 @@
 
 <style>
 
-/* ── Design tokens (matches the Finance Search redesign palette) ── */
+/* ── Design tokens ── */
 .filter-panel {
   --fp-green-100: #DCF3E8;
   --fp-green-200: #CAE1D6;
@@ -43,63 +43,58 @@
   font-weight: 600;
   color: var(--fp-green-700);
 }
-.fp-header .fp-count {
-  margin-left: auto;
-  font-size: 11px;
-  background: var(--fp-green-500);
-  color: #fff;
-  border-radius: 20px;
-  padding: 2px 9px;
-  font-weight: 600;
-  display: none;
-}
-.fp-header .fp-count.fp-visible { display: inline-block; }
 
-/* ── Accordion row ── */
-.filter-group {
+/* ── Accordion row — native <details> / <summary>, no JS ── */
+details.filter-group {
   border-bottom: 1px solid var(--fp-rule);
 }
-.filter-group:last-of-type { border-bottom: 0; }
+details.filter-group:last-of-type {
+  border-bottom: 0;
+}
 
+/* Hide browser's built-in disclosure triangle */
+details.filter-group > summary {
+  list-style: none;
+  cursor: pointer;
+}
+details.filter-group > summary::-webkit-details-marker { display: none; }
+details.filter-group > summary::marker { display: none; }
+
+/* Row header layout */
 .fg-toggle {
   display: flex;
   align-items: center;
   width: 100%;
-  background: transparent;
-  border: 0;
   padding: 12px 16px;
-  cursor: pointer;
   font-family: inherit;
   font-size: 13px;
   font-weight: 600;
   color: var(--fp-ink);
-  text-align: left;
+  user-select: none;
 }
 .fg-toggle:hover { background: var(--fp-green-100); }
 
-.fg-sel {
-  font-size: 11px;
-  color: var(--fp-green-500);
-  font-weight: 600;
-  margin-left: 4px;
-  display: none;
-}
-.fg-sel.fp-visible { display: inline; }
-
+/* Chevron — points right (collapsed) by default */
 .fg-caret {
   margin-left: auto;
   color: var(--fp-muted);
-  transition: transform .15s;
   display: flex;
   align-items: center;
   flex: none;
+  transform: rotate(-90deg);
+  transition: transform .15s;
 }
-.filter-group.fp-collapsed .fg-caret { transform: rotate(-90deg); }
+/* Chevron rotates to point down when open */
+details.filter-group[open] .fg-caret {
+  transform: rotate(0deg);
+}
 
-.fg-body { padding: 4px 16px 14px; }
-.filter-group.fp-collapsed .fg-body { display: none; }
+/* Body — shown/hidden by the browser natively */
+.fg-body {
+  padding: 4px 16px 14px;
+}
 
-/* ── ComboBox (matches redesign caret style) ── */
+/* ── ComboBox styling ── */
 .fg-body .ms-ComboBox {
   position: relative;
   display: block;
@@ -146,7 +141,7 @@
   box-shadow: 0 0 0 3px rgba(126,156,143,.25);
 }
 
-/* ── DatePicker ── */
+/* ── DatePicker styling ── */
 .fg-body pnp-filterdaterange .ms-DatePicker {
   position: relative;
   display: block;
@@ -213,7 +208,7 @@
 .ms-DatePicker-monthAndYear { color: var(--fp-green-500); font-weight: 600; }
 .ms-DatePicker-goToday { color: var(--fp-green-500); }
 
-/* ── ComboBox callout hover ── */
+/* ── ComboBox callout ── */
 .ms-ComboBox-callout .ms-Checkbox:hover { background-color: var(--fp-green-100); }
 
 /* ── Callout Apply / Clear buttons ── */
@@ -246,7 +241,7 @@ button.ms-Button.ms-Button--default[disabled] {
   cursor: not-allowed;
 }
 
-/* Apply button inside callout (PnP filterMultiActions) */
+/* ── PnP filterMultiActions Apply button ── */
 [class^="filterMultiActions_"] button.ms-Button.ms-Button--primary[class^="applyBtn_"]:not(.is-disabled):not([disabled]) {
   background-color: #6e8b7d !important;
   color: #ffffff !important;
@@ -271,7 +266,7 @@ button.ms-Button.ms-Button--default[disabled] {
   cursor: not-allowed !important;
 }
 
-/* Clear-filter icon in label area */
+/* ── Clear-filter icon ── */
 .ms-Label i[data-icon-name="ClearFilter"] {
   color: var(--fp-green-500) !important;
   cursor: pointer;
@@ -286,14 +281,11 @@ pnp-filtercombobox .ms-Fabric { display: block !important; width: 90% !important
 
 /* ── Footer ── */
 .fp-footer {
-  padding: 12px 16px;
+  padding: 12px 16px 14px;
   display: flex;
   flex-direction: column;
-  gap: 0;
+  gap: 8px;
 }
-.fp-footer-top { padding-bottom: 12px; }
-.fp-footer-bottom { padding-top: 0; }
-
 .fp-more-btn {
   width: 100%;
   background: var(--fp-green-700);
@@ -312,7 +304,8 @@ pnp-filtercombobox .ms-Fabric { display: block !important; width: 90% !important
 }
 .fp-more-btn:hover { background: var(--fp-green-800); }
 
-.fp-clear-btn {
+.fp-clear-link {
+  display: block;
   background: transparent;
   border: 0;
   color: var(--fp-muted);
@@ -320,10 +313,16 @@ pnp-filtercombobox .ms-Fabric { display: block !important; width: 90% !important
   font-size: 12.5px;
   cursor: pointer;
   text-decoration: underline;
-  padding: 12px 0 0;
+  padding: 2px 0;
   text-align: left;
 }
-.fp-clear-btn:hover { color: #EB5757; }
+.fp-clear-link:hover { color: #EB5757; }
+
+#fluent-default-layer-host .ms-Callout .ms-ComboBox-callout {
+  position: fixed !important;
+  right: 0 !important;
+  top: 64px !important;
+}
 
 </style>
 
@@ -333,22 +332,20 @@ pnp-filtercombobox .ms-Fabric { display: block !important; width: 90% !important
   <!-- Header -->
   <div class="fp-header">
     <h3>Filters</h3>
-    <span class="fp-count" id="fp-active-count">0</span>
   </div>
 
-  <!-- One accordion row per filter -->
+  <!-- One accordion row per filter — expand/collapse via native <details>, no JS -->
   {{#each @root.filters as |filter|}}
-  <div class="filter-group fp-collapsed" data-fp-key="{{filter.filterName}}">
+  <details class="filter-group">
 
-    <button class="fg-toggle" type="button" onclick="fpToggle(this)">
+    <summary class="fg-toggle">
       {{filter.displayName}}
-      <span class="fg-sel">· 1</span>
       <span class="fg-caret">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="m6 9 6 6 6-6"/>
         </svg>
       </span>
-    </button>
+    </summary>
 
     <div class="fg-body">
 
@@ -383,62 +380,20 @@ pnp-filtercombobox .ms-Fabric { display: block !important; width: 90% !important
       {{/eq}}
 
     </div>
-  </div>
+  </details>
   {{/each}}
 
   <!-- Footer -->
   <div class="fp-footer">
-    <div class="fp-footer-top">
-      <button class="fp-more-btn" type="button">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M4 6h16M7 12h10M10 18h4"/>
-        </svg>
-        More filters
-      </button>
-    </div>
-    <div class="fp-footer-bottom">
-      <button class="fp-clear-btn" type="button" onclick="fpClearAll()">Clear all filters</button>
-    </div>
+    <button class="fp-more-btn" type="button">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M4 6h16M7 12h10M10 18h4"/>
+      </svg>
+      More filters
+    </button>
+    <button class="fp-clear-link" type="button">Clear all filters</button>
   </div>
 
 </div>
-
-
-<script>
-/* Toggle an accordion row open / closed */
-function fpToggle(btn) {
-  var group = btn.closest('.filter-group');
-  group.classList.toggle('fp-collapsed');
-}
-
-/* Clear all: reset every PnP combobox and date-range input */
-function fpClearAll() {
-  var panel = document.querySelector('.filter-panel');
-  if (!panel) return;
-
-  /* Reset native selects inside pnp-filtercombobox */
-  panel.querySelectorAll('pnp-filtercombobox').forEach(function(el) {
-    el.querySelectorAll('option').forEach(function(o) {
-      o.removeAttribute('data-selected');
-      o.selected = false;
-    });
-    /* Try to fire the combobox's own clear if it exposes one */
-    if (typeof el.clearFilters === 'function') el.clearFilters();
-  });
-
-  /* Reset date-range inputs */
-  panel.querySelectorAll('pnp-filterdaterange input[type="text"], pnp-filterdaterange input[type="date"]')
-    .forEach(function(i) { i.value = ''; });
-
-  /* Hide the active-count badge */
-  var badge = document.getElementById('fp-active-count');
-  if (badge) { badge.textContent = '0'; badge.classList.remove('fp-visible'); }
-
-  /* Collapse all rows */
-  panel.querySelectorAll('.filter-group').forEach(function(g) {
-    g.classList.add('fp-collapsed');
-  });
-}
-</script>
 
 </content>
