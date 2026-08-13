@@ -1,0 +1,444 @@
+<content id="data-content">
+
+<style>
+
+/* ── Design tokens (matches the Finance Search redesign palette) ── */
+.filter-panel {
+  --fp-green-100: #DCF3E8;
+  --fp-green-200: #CAE1D6;
+  --fp-green-300: #A7BDB2;
+  --fp-green-400: #7E9C8F;
+  --fp-green-500: #64796F;
+  --fp-green-600: #455950;
+  --fp-green-700: #283B33;
+  --fp-green-800: #0D2018;
+  --fp-ink:   #333333;
+  --fp-muted: #737373;
+  --fp-rule:  #DADADA;
+  --fp-shadow: 0 1px 2px rgba(40,59,51,.06), 0 2px 8px rgba(40,59,51,.05);
+}
+
+/* ── Card shell ── */
+.filter-panel {
+  background: #ffffff;
+  border: 1px solid var(--fp-rule);
+  border-radius: 14px;
+  box-shadow: var(--fp-shadow);
+  overflow: hidden;
+  font-family: 'Segoe UI', system-ui, -apple-system, Arial, sans-serif;
+  font-size: 14px;
+  color: var(--fp-ink);
+}
+
+/* ── Card header ── */
+.fp-header {
+  display: flex;
+  align-items: center;
+  padding: 13px 16px;
+  border-bottom: 1px solid var(--fp-rule);
+}
+.fp-header h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--fp-green-700);
+}
+.fp-header .fp-count {
+  margin-left: auto;
+  font-size: 11px;
+  background: var(--fp-green-500);
+  color: #fff;
+  border-radius: 20px;
+  padding: 2px 9px;
+  font-weight: 600;
+  display: none;
+}
+.fp-header .fp-count.fp-visible { display: inline-block; }
+
+/* ── Accordion row ── */
+.filter-group {
+  border-bottom: 1px solid var(--fp-rule);
+}
+.filter-group:last-of-type { border-bottom: 0; }
+
+.fg-toggle {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  background: transparent;
+  border: 0;
+  padding: 12px 16px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fp-ink);
+  text-align: left;
+}
+.fg-toggle:hover { background: var(--fp-green-100); }
+
+.fg-sel {
+  font-size: 11px;
+  color: var(--fp-green-500);
+  font-weight: 600;
+  margin-left: 4px;
+  display: none;
+}
+.fg-sel.fp-visible { display: inline; }
+
+.fg-caret {
+  margin-left: auto;
+  color: var(--fp-muted);
+  transition: transform .15s;
+  display: flex;
+  align-items: center;
+  flex: none;
+}
+.filter-group.fp-collapsed .fg-caret { transform: rotate(-90deg); }
+
+.fg-body { padding: 4px 16px 14px; }
+.filter-group.fp-collapsed .fg-body { display: none; }
+
+/* ── ComboBox (matches redesign caret style) ── */
+.fg-body .ms-ComboBox {
+  position: relative;
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  min-height: 36px;
+  background: #fff;
+  border: 1px solid #BDBDBD;
+  border-radius: 7px;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+.fg-body .ms-ComboBox-input {
+  display: block;
+  width: 100%;
+  border: none;
+  outline: none;
+  background: transparent;
+  padding: 0 44px 0 12px;
+  color: var(--fp-muted);
+  font-family: 'Segoe UI', Arial, sans-serif;
+  font-size: 12px;
+  line-height: 36px;
+  box-sizing: border-box;
+}
+.fg-body .ms-ComboBox-CaretDown-button {
+  position: absolute;
+  right: 0; top: 0;
+  width: 40px; height: 34px;
+  background: var(--fp-green-200);
+  border-left: 1px solid #BDBDBD;
+  border-top-right-radius: 7px;
+  border-bottom-right-radius: 7px;
+  box-sizing: border-box;
+  cursor: pointer;
+  z-index: 2;
+}
+.fg-body .ms-ComboBox-CaretDown-button .ms-ComboBox-caretDown {
+  color: var(--fp-green-500);
+  fill: var(--fp-green-500);
+}
+.fg-body .ms-ComboBox:focus-within {
+  border-color: var(--fp-green-400);
+  box-shadow: 0 0 0 3px rgba(126,156,143,.25);
+}
+
+/* ── DatePicker ── */
+.fg-body pnp-filterdaterange .ms-DatePicker {
+  position: relative;
+  display: block;
+  width: 100%;
+  min-height: 36px;
+  background: #fff;
+  border: 1px solid #BDBDBD;
+  border-radius: 7px;
+  box-sizing: border-box;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+.fg-body pnp-filterdaterange .ms-TextField-fieldGroup {
+  background: transparent;
+  border: none;
+  height: 36px;
+  display: flex;
+  align-items: center;
+}
+.fg-body pnp-filterdaterange .ms-TextField-field {
+  flex: 1 1 auto;
+  height: 36px;
+  border: none;
+  outline: none;
+  background: #fff;
+  padding: 0 44px 0 12px;
+  color: var(--fp-muted);
+  font-family: 'Segoe UI', Arial, sans-serif;
+  font-size: 12px;
+  line-height: 36px;
+  box-sizing: border-box;
+}
+.fg-body pnp-filterdaterange .ms-DatePicker-pickerButton {
+  position: absolute;
+  right: 0; top: 0;
+  width: 40px; height: 36px;
+  background: var(--fp-green-200);
+  border-left: 1px solid #BDBDBD;
+  border-top-right-radius: 7px;
+  border-bottom-right-radius: 7px;
+  box-sizing: border-box;
+  cursor: pointer;
+  z-index: 2;
+}
+.fg-body pnp-filterdaterange .ms-DatePicker-pickerIcon {
+  color: var(--fp-green-500);
+  fill: var(--fp-green-500);
+}
+.fg-body pnp-filterdaterange .ms-DatePicker:hover { border-color: #A6A6A6; }
+.fg-body pnp-filterdaterange .ms-DatePicker:focus-within {
+  border-color: var(--fp-green-400);
+  box-shadow: 0 0 0 1px var(--fp-green-400) inset;
+}
+
+/* ── Calendar callout ── */
+.ms-Callout.ms-DatePicker-callout {
+  border: 1px solid #BDBDBD;
+  border-radius: 6px;
+  overflow: hidden;
+}
+.ms-DatePicker-day--today { border: 1px solid var(--fp-green-500); }
+.ms-DatePicker-day.ms-DatePicker-day--highlighted,
+.ms-DatePicker-day:hover { background-color: var(--fp-green-100); }
+.ms-DatePicker-monthAndYear { color: var(--fp-green-500); font-weight: 600; }
+.ms-DatePicker-goToday { color: var(--fp-green-500); }
+
+/* ── ComboBox callout hover ── */
+.ms-ComboBox-callout .ms-Checkbox:hover { background-color: var(--fp-green-100); }
+
+/* ── Callout Apply / Clear buttons ── */
+.ms-Callout .ms-Button.ms-Button--primary,
+.ms-Callout .ms-Button.ms-Button--primary:hover,
+.ms-Callout .ms-Button.ms-Button--primary:active,
+.ms-Callout .ms-Button.ms-Button--primary:focus {
+  background-color: #6e8b7d !important;
+  color: #ffffff !important;
+  border-radius: 40px !important;
+  border: none !important;
+}
+.ms-Callout .ms-Button.ms-Button--primary.is-disabled,
+.ms-Callout .ms-Button.ms-Button--primary[disabled] {
+  background-color: #f3f5f4 !important;
+  color: #000 !important;
+  border-radius: 40px;
+  border: none;
+  cursor: not-allowed;
+}
+button.ms-Button.ms-Button--default {
+  background-color: #f3f5f4;
+  border: none;
+  border-radius: 40px;
+  color: black;
+  cursor: pointer;
+}
+button.ms-Button.ms-Button--default.is-disabled,
+button.ms-Button.ms-Button--default[disabled] {
+  cursor: not-allowed;
+}
+
+/* Apply button inside callout (PnP filterMultiActions) */
+[class^="filterMultiActions_"] button.ms-Button.ms-Button--primary[class^="applyBtn_"]:not(.is-disabled):not([disabled]) {
+  background-color: #6e8b7d !important;
+  color: #ffffff !important;
+  border-radius: 40px !important;
+  border: none !important;
+  cursor: pointer !important;
+  min-height: 36px;
+}
+[class^="filterMultiActions_"] button.ms-Button.ms-Button--primary[class^="applyBtn_"]:not(.is-disabled):not([disabled]) .ms-Button-flexContainer {
+  background-color: transparent !important;
+  color: inherit !important;
+}
+[class^="filterMultiActions_"] button.ms-Button.ms-Button--primary[class^="applyBtn_"]:not(.is-disabled):not([disabled]) .ms-Button-label {
+  color: #ffffff !important;
+}
+[class^="filterMultiActions_"] button.ms-Button.ms-Button--primary[class^="applyBtn_"].is-disabled,
+[class^="filterMultiActions_"] button.ms-Button.ms-Button--primary[class^="applyBtn_"][disabled] {
+  background-color: #f3f5f4 !important;
+  border: none !important;
+  border-radius: 40px !important;
+  color: black !important;
+  cursor: not-allowed !important;
+}
+
+/* Clear-filter icon in label area */
+.ms-Label i[data-icon-name="ClearFilter"] {
+  color: var(--fp-green-500) !important;
+  cursor: pointer;
+}
+
+/* ── Force full-width on PnP elements ── */
+pnp-filtercombobox,
+pnp-filtercombobox .ms-ComboBox-container,
+pnp-filtercombobox .ms-ComboBox { width: 100% !important; max-width: 100% !important; }
+pnp-filtercombobox .ms-ComboBox-Input { width: 100% !important; }
+pnp-filtercombobox .ms-Fabric { display: block !important; width: 90% !important; max-width: 100% !important; }
+
+/* ── Footer ── */
+.fp-footer {
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.fp-footer-top { padding-bottom: 12px; }
+.fp-footer-bottom { padding-top: 0; }
+
+.fp-more-btn {
+  width: 100%;
+  background: var(--fp-green-700);
+  color: #fff;
+  border: 0;
+  border-radius: 9px;
+  padding: 10px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+.fp-more-btn:hover { background: var(--fp-green-800); }
+
+.fp-clear-btn {
+  background: transparent;
+  border: 0;
+  color: var(--fp-muted);
+  font-family: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+  text-decoration: underline;
+  padding: 12px 0 0;
+  text-align: left;
+}
+.fp-clear-btn:hover { color: #EB5757; }
+
+</style>
+
+
+<div class="filter-panel">
+
+  <!-- Header -->
+  <div class="fp-header">
+    <h3>Filters</h3>
+    <span class="fp-count" id="fp-active-count">0</span>
+  </div>
+
+  <!-- One accordion row per filter -->
+  {{#each @root.filters as |filter|}}
+  <div class="filter-group fp-collapsed" data-fp-key="{{filter.filterName}}">
+
+    <button class="fg-toggle" type="button" onclick="fpToggle(this)">
+      {{filter.displayName}}
+      <span class="fg-sel">· 1</span>
+      <span class="fg-caret">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="m6 9 6 6 6-6"/>
+        </svg>
+      </span>
+    </button>
+
+    <div class="fg-body">
+
+      {{#eq filter.selectedTemplate "ComboBoxFilterTemplate"}}
+        <pnp-filtercombobox
+          class="dropdown"
+          data-instance-id="{{@root.instanceId}}"
+          data-filter-name="{{filter.filterName}}"
+          data-is-multi="{{filter.isMulti}}"
+          data-show-count="{{filter.showCount}}"
+          data-operator="{{filter.operator}}"
+          data-theme-variant="{{JSONstringify @root.theme}}">
+          {{#each filter.values}}
+            <option value="{{value}}" data-selected="{{selected}}" data-count="{{count}}">
+              {{name}}
+            </option>
+          {{/each}}
+        </pnp-filtercombobox>
+      {{else}}
+        {{#eq filter.selectedTemplate "DateRangeFilterTemplate"}}
+          <pnp-filterdaterange
+            data-instance-id="{{@root.instanceId}}"
+            data-filter="{{JSONstringify filter}}"
+            data-theme-variant="{{JSONstringify @root.theme}}">
+          </pnp-filterdaterange>
+        {{else}}
+          <pnp-filtersearchbox
+            data-filter="{{JSONstringify filter}}"
+            data-instance-id="{{@root.instanceId}}">
+          </pnp-filtersearchbox>
+        {{/eq}}
+      {{/eq}}
+
+    </div>
+  </div>
+  {{/each}}
+
+  <!-- Footer -->
+  <div class="fp-footer">
+    <div class="fp-footer-top">
+      <button class="fp-more-btn" type="button">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M4 6h16M7 12h10M10 18h4"/>
+        </svg>
+        More filters
+      </button>
+    </div>
+    <div class="fp-footer-bottom">
+      <button class="fp-clear-btn" type="button" onclick="fpClearAll()">Clear all filters</button>
+    </div>
+  </div>
+
+</div>
+
+
+<script>
+/* Toggle an accordion row open / closed */
+function fpToggle(btn) {
+  var group = btn.closest('.filter-group');
+  group.classList.toggle('fp-collapsed');
+}
+
+/* Clear all: reset every PnP combobox and date-range input */
+function fpClearAll() {
+  var panel = document.querySelector('.filter-panel');
+  if (!panel) return;
+
+  /* Reset native selects inside pnp-filtercombobox */
+  panel.querySelectorAll('pnp-filtercombobox').forEach(function(el) {
+    el.querySelectorAll('option').forEach(function(o) {
+      o.removeAttribute('data-selected');
+      o.selected = false;
+    });
+    /* Try to fire the combobox's own clear if it exposes one */
+    if (typeof el.clearFilters === 'function') el.clearFilters();
+  });
+
+  /* Reset date-range inputs */
+  panel.querySelectorAll('pnp-filterdaterange input[type="text"], pnp-filterdaterange input[type="date"]')
+    .forEach(function(i) { i.value = ''; });
+
+  /* Hide the active-count badge */
+  var badge = document.getElementById('fp-active-count');
+  if (badge) { badge.textContent = '0'; badge.classList.remove('fp-visible'); }
+
+  /* Collapse all rows */
+  panel.querySelectorAll('.filter-group').forEach(function(g) {
+    g.classList.add('fp-collapsed');
+  });
+}
+</script>
+
+</content>
