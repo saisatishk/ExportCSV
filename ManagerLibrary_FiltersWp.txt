@@ -1,0 +1,562 @@
+<content id="data-content">
+
+<style>
+
+.filter-panel {
+    width: 100%;
+    max-width: none;
+    /*background: #ffffff;
+    border: 1px solid #cfd8d3;
+    border-radius: 8px;*/
+    font-family: 'Segoe UI', sans-serif;
+}
+.pnp-filtercombobox
+{
+     max-width: 100%;
+     width: 100%;
+	 display: block !important;
+}
+.filter-title {
+font-family: "Segoe UI";
+font-size: 24px;
+font-style: normal;
+font-weight: 600;
+line-height: 20px; 
+    color: #ffffff;
+     padding-left: 10px;
+}
+
+.filter-group {
+    margin-bottom: 18px;
+    width: 100%;
+}
+
+.filter-label {
+color: #ffffff;
+padding-left: 20px;
+font-family: "Segoe UI";
+font-size: 12px;
+font-style: normal;
+font-weight: 600;
+line-height: 16px; /* 133.333% */
+}
+
+.filter-input {
+    
+    padding-left: 10px;
+    display: block;
+    align-items: center;
+	width: 100% !important;
+	max-width: none !important;
+}
+
+.filter-input select,
+.filter-input input {
+    border: none;
+     padding-left: 10px;
+    outline: none;
+    width: 100%;
+    font-size: 14px;
+    background: transparent;
+}
+
+.filter-input-icon {
+    margin-left: auto;
+    color: #6e8b7d;
+}
+
+/*.apply-button {
+    width: 100%;
+    background: #6e8b7d;
+    color: #ffffff;
+    font-size: 16px;
+    padding: 12px;
+    text-align: center;
+    border-radius: 40px;
+    border: none;
+    cursor: pointer;
+    margin-top: 12px;
+}
+
+.apply-button:hover {
+    background: #5a7866;
+}*/
+/*.ms-ComboBox-CaretDown-button
+{
+    background: #CAE1D6;
+}*/
+
+
+dropdown {
+  display: block; /* the web part outputs the ComboBox markup inside */
+}
+
+/* ──────────────────────────────────────────────────────────────
+   Figma dropdown styling applied to Fluent ComboBox markup
+   ────────────────────────────────────────────────────────────── */
+
+
+/* Make the outer container a positioning context */
+.dropdown .ms-ComboBox {
+  position: relative;           /* required for absolute children */
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  min-height: 36px;
+  background: #ffffff;
+  border: 1px solid #BDBDBD;
+  border-radius: 4px;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+/* Input gets right padding to avoid the caret area */
+.dropdown .ms-ComboBox-input {
+  display: block;
+  width: 100%;
+  border: none;
+  outline: none;
+  background: transparent;
+  padding: 0 44px 0 12px;       /* right padding (40px caret + 4px gap) */
+  color: #737373;
+  font-family: "Segoe UI", Arial, sans-serif;
+  font-size: 12px;
+  line-height: 36px;            /* vertically centers text */
+  box-sizing: border-box;
+}
+
+/* Pin caret to the top-right */
+.dropdown .ms-ComboBox-CaretDown-button {
+  position: absolute;
+  right: 0;
+  top: 0;
+  width: 40px;
+  height: 34px;
+  background: #CAE1D6;
+  border-left: 1px solid #BDBDBD;
+  border-top-right-radius: 4px;
+  border-bottom-right-radius: 4px;
+  box-sizing: border-box;
+  cursor: pointer;
+  z-index: 2;                   /* sits above the input background */
+  pointer-events: auto;         /* click works */
+}
+
+/* Hover on dropdown options*/
+.ms-ComboBox-callout .ms-Checkbox:hover {
+    background-color: #CAE1D6
+}
+
+/* Optional caret icon color */
+.dropdown .ms-ComboBox-CaretDown-button .ms-ComboBox-caretDown {
+  color: #64796F;
+  fill: #64796F;
+}
+
+/* Clear button beside combo box */
+.ms-Label i[data-icon-name="ClearFilter"] {
+    color: #ffffff !important;
+    cursor: pointer;
+}
+
+.ms-Button.ms-Button--primary:active {
+background-color: #6e8b7d !important;
+    color: #ffffff !important;
+    font-size: 16px !important;
+    text-align: center !important;
+    border-radius: 40px !important;
+    border: none !important;
+}
+
+/* Apply Button Within the Combo Box */
+.ms-Callout .ms-Button.ms-Button--primary,
+.ms-Callout .ms-Button.ms-Button--primary:hover,
+.ms-Callout .ms-Button.ms-Button--primary:active,
+.ms-Callout .ms-Button.ms-Button--primary:focus {
+    background-color: #6e8b7d !important;
+    color: #ffffff !important;
+    font-size: 16px !important;
+    text-align: center !important;
+    border-radius: 40px !important;
+    border: none !important;
+}
+
+.ms-Callout .ms-Button.ms-Button--primary.is-disabled,
+.ms-Callout .ms-Button.ms-Button--primary[disabled] {
+    background-color: #f3f5f4 !important;
+    color: #000 !important;
+    border-radius: 40px;
+    border: none;
+    cursor: not-allowed;
+}
+
+/* Clear Button Styling when normal */
+button.ms-Button.ms-Button--default {
+  background-color: #f3f5f4;
+  border: none;
+  border-radius: 40px;
+  color: black;
+  cursor: pointer;
+}
+
+
+/* Clear Button Styling when disabled */
+button.ms-Button.ms-Button--default.is-disabled,
+button.ms-Button.ms-Button--default[disabled] {
+  background-color: #f3f5f4;
+  border: none;
+  border-radius: 40px;
+  color: black;
+  cursor: not-allowed;
+}
+
+
+
+
+
+/* Adjusting the Date Picker Control */
+.filter-input .ms-DatePicker {
+	width: 105%;
+	padding: 0 44px 0 12px;
+	display: block;
+}
+
+/* Clear Button for Date Picker */
+.filter-input button.ms-link {
+	padding: 0 44px 0 12px;
+}*/
+
+
+/* ──────────────────────────────────────────────────────────────
+   Date Range (Fluent UI DatePicker) – styled like your dropdown
+   Scope: inside .filter-input and/or the pnp-filterdaterange element
+   ────────────────────────────────────────────────────────────── */
+
+/* Make each DatePicker look like your ComboBox container */
+.filter-input pnp-filterdaterange .ms-DatePicker {
+  position: relative;                /* for absolute icon area */
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  min-height: 36px;
+  background: #ffffff;
+  border: 1px solid #BDBDBD;
+  border-radius: 4px;
+  box-sizing: border-box;
+  overflow: hidden;
+  /* spacing between From / To inputs */
+  margin-bottom: 8px;
+}
+
+/* The text field inside the DatePicker */
+.filter-input pnp-filterdaterange .ms-TextField-fieldGroup {
+  background: transparent;
+  border: none;                       /* we already drew the outer border above */
+  height: 36px;
+  display: flex;
+  align-items: center;
+  padding: 0;                         /* reset default Fluent padding */
+}
+
+/* The actual input element */
+.filter-input pnp-filterdaterange .ms-TextField-field {
+  flex: 1 1 auto;
+  /*width: 100%;*/
+  height: 36px;
+  border: none;
+  outline: none;
+  background: white;
+  padding: 0 44px 0 12px;             /* right padding for icon area */
+  color: #737373;
+  font-family: "Segoe UI", Arial, sans-serif;
+  font-size: 12px;
+  line-height: 36px;                  /* vertically center text */
+  box-sizing: border-box;
+}
+
+/* Icon button area (calendar button) pinned to top-right, like your caret */
+.filter-input pnp-filterdaterange .ms-DatePicker-pickerButton {
+  position: absolute;
+  right: 0;
+  top: 0;
+  width: 40px;
+  height: 36px;
+  background: #CAE1D6;                /* matches your dropdown caret background */
+  border-left: 1px solid #BDBDBD;
+  border-top-right-radius: 4px;
+  border-bottom-right-radius: 4px;
+  box-sizing: border-box;
+  cursor: pointer;
+  z-index: 2;
+  pointer-events: auto;
+}
+
+/* Calendar icon color */
+.filter-input pnp-filterdaterange .ms-DatePicker-pickerIcon {
+  color: #64796F;
+  fill: #64796F;
+}
+
+/* Hover/focus ring on the whole control */
+.filter-input pnp-filterdaterange .ms-DatePicker:hover {
+  border-color: #A6A6A6;
+}
+.filter-input pnp-filterdaterange .ms-DatePicker.is-focused,
+.filter-input pnp-filterdaterange .ms-DatePicker:focus-within {
+  border-color: #6e8b7d;              /* your accent/brand tint */
+  box-shadow: 0 0 0 1px #6e8b7d inset;
+}
+
+/* Disabled state */
+.filter-input pnp-filterdaterange .ms-DatePicker.is-disabled,
+.filter-input pnp-filterdaterange .ms-TextField.is-disabled,
+.filter-input pnp-filterdaterange .ms-DatePicker[disabled] {
+  background-color: #f4f4f4;
+  border-color: #E0E0E0;
+  opacity: 0.8;
+  cursor: not-allowed;
+}
+.filter-input pnp-filterdaterange .ms-DatePicker.is-disabled .ms-DatePicker-pickerButton,
+.filter-input pnp-filterdaterange .ms-TextField.is-disabled .ms-DatePicker-pickerButton {
+  background-color: #e9e9e9;
+  border-left-color: #E0E0E0;
+  cursor: not-allowed;
+}
+
+/* Labels (if PnP renders From/To labels via ms-Label) */
+.filter-input pnp-filterdaterange .ms-Label {
+  color: #ffffff;
+  font-family: "Segoe UI";
+  font-size: 12px;
+  font-weight: 600;
+  margin: 0 0 6px 20px;               /* align with your filter-label padding */
+}*/
+
+/* Calendar callout (popup) – optional styling to match your palette */
+
+.ms-Callout.ms-DatePicker-callout {
+  border: 1px solid #BDBDBD;
+  border-radius: 6px;
+  overflow: hidden;
+}
+.ms-DatePicker-day--today {
+  border: 1px solid #6e8b7d;          /* accent for today */
+}
+.ms-DatePicker-day.ms-DatePicker-day--highlighted,
+.ms-DatePicker-day:hover {
+  background-color: #EAF4EF;          /* soft green hover */
+}
+.ms-DatePicker-monthAndYear {
+  color: #64796F;
+  font-weight: 600;
+}
+.ms-DatePicker-goToday {
+  color: #6e8b7d;
+}
+
+/* Clear button inside date range template (if rendered as link) */
+.filter-input pnp-filterdaterange button.ms-link {
+  padding: 0 44px 0 12px;
+  color: #6e8b7d;
+}
+.filter-input pnp-filterdaterange button.ms-link:hover {
+  text-decoration: underline;
+}
+
+
+/* ===============================
+   FORCE FULL WIDTH – PnP FILTERS
+   =============================== */
+
+/* ComboBox root */
+pnp-filtercombobox {
+  width: 100% !important;
+  max-width: 100% !important;
+}
+
+/* Fluent container */
+pnp-filtercombobox .ms-ComboBox-container {
+  width: 100% !important;
+  max-width: 100% !important;
+}
+
+/* The actual ComboBox root (css-XXX class) */
+pnp-filtercombobox .ms-ComboBox {
+  width: 100% !important;
+  max-width: 100% !important;
+}
+
+/* Input must stretch */
+pnp-filtercombobox .ms-ComboBox-Input {
+  width: 100% !important;
+}
+
+pnp-filtercombobox .ms-Fabric {
+  display: block !important;
+  width: 90% !important;
+  max-width: 100% !important;
+}
+
+.filter-input > pnp-filterdaterange {
+    margin-top: 12px; /* adjust to match ComboBox spacing */
+    display: block;  /* ensure spacing works */
+}
+
+/* Add spacing between From and To date pickers */
+pnp-filterdaterange .ms-DatePicker + .ms-DatePicker {
+    margin-top: 10px; /* adjust as needed */
+}
+
+/* Make the calendar icon more visible */
+pnp-filterdaterange .ms-DatePicker i[data-icon-name="Calendar"] {
+    color: #66786b; /* dark color, adjust as needed */
+    font-size: 20px; /* optional: adjust icon size */
+}
+
+.ms-DatePicker input {
+    scroll-behavior: auto; /* disables smooth jump during focus */
+}
+
+/* Align Clear button with the datepickers */
+.filter-input .ms-Link {
+    display: inline-block;      /* keep it on its own line */
+    margin-left: 12px;           /* adjust to match datepicker input padding */
+    margin-top: 4px;            /* spacing below the datepickers */
+}
+
+
+
+
+
+/* === Apply (enabled) – primary style on the button itself === */
+[class^="filterMultiActions_"] button.ms-Button.ms-Button--primary[class^="applyBtn_"]:not(.is-disabled):not([disabled]) {
+  background-color: #6e8b7d !important; /* your brand green */
+  color: #ffffff !important;
+  border-radius: 40px !important;
+  border: none !important;
+  cursor: pointer !important;
+
+  /* Optional: ensure consistent height/padding */
+  min-height: 36px;
+}
+
+/* Neutralize the inner flex container so it doesn't override the button */
+[class^="filterMultiActions_"] button.ms-Button.ms-Button--primary[class^="applyBtn_"]:not(.is-disabled):not([disabled]) .ms-Button-flexContainer {
+  background-color: transparent !important;  /* critical */
+  color: inherit !important;
+}
+
+/* Label text color (some builds color the label separately) */
+[class^="filterMultiActions_"] button.ms-Button.ms-Button--primary[class^="applyBtn_"]:not(.is-disabled):not([disabled]) .ms-Button-label {
+  color: #ffffff !important;
+}
+
+/* Hover / focus (keep consistent) */
+[class^="filterMultiActions_"] button.ms-Button.ms-Button--primary[class^="applyBtn_"]:hover,
+[class^="filterMultiActions_"] button.ms-Button.ms-Button--primary[class^="applyBtn_"]:focus {
+  background-color: #6e8b7d !important;
+  color: #ffffff !important;
+}
+
+/* Active/pressed */
+[class^="filterMultiActions_"] button.ms-Button.ms-Button--primary[class^="applyBtn_"].is-pressed,
+[class^="filterMultiActions_"] button.ms-Button.ms-Button--primary[class^="applyBtn_"]:active {
+  background-color: #6e8b7d !important;
+  color: #ffffff !important;
+}
+
+/* === Apply (disabled) – keep your working state === */
+[class^="filterMultiActions_"] button.ms-Button.ms-Button--primary[class^="applyBtn_"].is-disabled,
+[class^="filterMultiActions_"] button.ms-Button.ms-Button--primary[class^="applyBtn_"][disabled] {
+  background-color: #f3f5f4 !important;
+  border: none !important;
+  border-radius: 40px !important;
+  color: black !important;
+  cursor: not-allowed !important;
+}
+
+
+[id^="pnp-template_"] .ms-Callout .ms-Button.ms-Button--primary.is-disabled, .ms-Callout .ms-Button.ms-Button--primary
+{
+    background-color: #6e8b7d !important;
+  border-radius: 40px !important;
+  border: none !important;
+    color: #ffffff !important;
+}
+
+#fluent-default-layer-host .ms-Callout .ms-ComboBox-callout
+{
+    position: fixed !important;
+  right: 0 !important;
+  top: 64px !important; /* adjust for command bar */
+ 
+}
+
+</style>
+
+
+
+<div class="filter-panel">
+
+    <div class="filter-title">Refine Results</div>
+<br/>
+    {{#each @root.filters as |filter|}}
+
+        <div class="filter-group">
+            <div class="filter-label">{{filter.displayName}}</div>
+
+            {{#eq filter.selectedTemplate "ComboBoxFilterTemplate"}}
+                <div class="filter-input">
+                    <pnp-filtercombobox
+						class="dropdown"
+                        data-instance-id="{{@root.instanceId}}"
+                        data-filter-name="{{filter.filterName}}"
+                        data-is-multi="{{filter.isMulti}}"
+                        data-show-count="{{filter.showCount}}"
+                        data-operator="{{filter.operator}}"
+                        data-theme-variant="{{JSONstringify @root.theme}}">
+                        {{#each filter.values}}
+                            <option value="{{value}}" data-selected="{{selected}}" data-count="{{count}}">
+                                {{name}}                            
+                            </option>
+                        {{/each}}
+                    </pnp-filtercombobox>
+                   
+                </div>
+
+            {{else}}
+                {{#eq filter.selectedTemplate "DateRangeFilterTemplate"}}
+                    <div class="filter-input">
+                        <pnp-filterdaterange
+                            data-instance-id="{{@root.instanceId}}"
+                            data-filter="{{JSONstringify filter}}"
+                            data-theme-variant="{{JSONstringify @root.theme}}">
+                        </pnp-filterdaterange>
+
+                    </div>
+
+                {{else}}
+                    <!-- fallback checkbox filters -->
+                    <div class="filter-input">
+                        <pnp-filtersearchbox 
+                            data-filter="{{JSONstringify filter}}" 
+                            data-instance-id="{{@root.instanceId}}">
+                        </pnp-filtersearchbox>
+
+                    </div>
+
+                {{/eq}}
+            {{/eq}}
+
+        </div>
+
+    {{/each}}
+
+</div>
+
+</content>
+
+
+
+
+

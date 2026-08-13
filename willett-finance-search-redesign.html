@@ -1,0 +1,778 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Finance Search — Redesign Prototype</title>
+<style>
+  :root{
+    --font-sans:"Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+    --green-100:#DCF3E8; --green-200:#CAE1D6; --green-300:#A7BDB2; --green-400:#7E9C8F;
+    --green-500:#64796F; --green-600:#455950; --green-700:#283B33; --green-800:#0D2018;
+    --mint:#EEFFFA;
+    --ink:#333333; --muted:#737373; --rule:#DADADA; --white:#FFFFFF;
+    --success:#13963F; --error:#EB5757; --warning:#EAAA08; --process:#F2994A;
+    --bg:#F4F6F5;
+    --shadow:0 1px 2px rgba(40,59,51,.06), 0 2px 8px rgba(40,59,51,.05);
+    --shadow-lg:0 8px 32px rgba(13,32,24,.18);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    font-family:var(--font-sans); color:var(--ink); background:var(--bg);
+    font-size:14px; line-height:1.5; -webkit-font-smoothing:antialiased;
+  }
+  button{font-family:inherit}
+  a{color:inherit}
+
+  /* ---------- brand bar ---------- */
+  .brandbar{
+    background:var(--green-700); color:#fff; display:flex; align-items:center;
+    gap:14px; padding:10px 24px;
+  }
+  .brandmark{
+    width:34px; height:34px; border-radius:7px; background:var(--green-500);
+    display:grid; place-items:center; font-weight:700; font-size:13px; letter-spacing:.5px;
+    color:#fff; box-shadow:inset 0 0 0 1px rgba(255,255,255,.15);
+  }
+  .brandbar .title{font-weight:600; font-size:15px}
+  .brandbar .env{
+    font-size:11px; color:var(--green-200); border:1px solid var(--green-500);
+    padding:2px 8px; border-radius:20px; margin-left:2px;
+  }
+  .brandbar .spacer{flex:1}
+  .brandbar .who{font-size:12.5px; color:var(--green-200)}
+
+  /* ---------- hero / search ---------- */
+  .hero{ background:linear-gradient(180deg,var(--green-600),var(--green-700)); padding:26px 24px 22px; }
+  .hero-inner{max-width:1180px; margin:0 auto}
+  .hero h1{ color:#fff; font-size:22px; font-weight:600; margin:0 0 3px; letter-spacing:-.2px }
+  .hero .sub{ color:var(--green-200); font-size:13px; margin:0 0 16px }
+  .searchrow{ display:flex; gap:10px; align-items:stretch }
+  .searchbox{
+    flex:1; display:flex; align-items:center; gap:10px; background:#fff;
+    border-radius:10px; padding:0 14px; box-shadow:var(--shadow);
+    border:1px solid transparent;
+  }
+  .searchbox:focus-within{ border-color:var(--green-300); box-shadow:0 0 0 3px rgba(126,156,143,.35) }
+  .searchbox svg{flex:none; color:var(--green-500)}
+  .searchbox input{
+    flex:1; border:0; outline:0; padding:13px 0; font-size:15px; color:var(--ink);
+    background:transparent;
+  }
+  .searchbox input::placeholder{color:#9aa5a0}
+  .searchbox .x{
+    border:0; background:transparent; color:var(--muted); cursor:pointer; font-size:18px;
+    padding:4px; line-height:1; border-radius:6px; display:none;
+  }
+  .searchbox .x:hover{background:var(--green-100)}
+  .searchbtn{
+    background:var(--green-800); color:#fff; border:0; border-radius:10px;
+    padding:0 22px; font-size:14px; font-weight:600; cursor:pointer;
+  }
+  .searchbtn:hover{background:#061510}
+
+  /* scope tabs */
+  .scopes{ display:flex; gap:4px; margin-top:14px; flex-wrap:wrap }
+  .scope{
+    background:rgba(255,255,255,.08); color:#e8efeb; border:1px solid rgba(255,255,255,.14);
+    padding:6px 14px; border-radius:20px; font-size:12.5px; cursor:pointer;
+  }
+  .scope:hover{background:rgba(255,255,255,.16)}
+  .scope.active{ background:#fff; color:var(--green-700); font-weight:600; border-color:#fff }
+
+  /* ---------- layout ---------- */
+  .wrap{ max-width:1180px; margin:0 auto; padding:20px 24px 60px; display:grid;
+    grid-template-columns:1fr 296px; gap:22px; align-items:start; }
+  @media(max-width:900px){ .wrap{grid-template-columns:1fr} .rail{order:-1} }
+
+  /* ---------- chips + results header ---------- */
+  .chipbar{ display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:14px; min-height:0 }
+  .chipbar:empty{display:none}
+  .chip{
+    display:inline-flex; align-items:center; gap:7px; background:#fff; border:1px solid var(--green-300);
+    color:var(--green-700); border-radius:20px; padding:5px 6px 5px 12px; font-size:12.5px; font-weight:600;
+    box-shadow:var(--shadow);
+  }
+  .chip .k{color:var(--muted); font-weight:400; margin-right:2px}
+  .chip button{
+    border:0; background:var(--green-100); color:var(--green-600); width:18px; height:18px;
+    border-radius:50%; cursor:pointer; font-size:12px; line-height:1; display:grid; place-items:center;
+  }
+  .chip button:hover{background:var(--green-300); color:#fff}
+  .chip-clear{
+    border:0; background:transparent; color:var(--muted); font-size:12.5px; cursor:pointer;
+    text-decoration:underline; padding:5px 4px;
+  }
+  .chip-clear:hover{color:var(--error)}
+
+  .rhead{ display:flex; align-items:center; gap:12px; margin-bottom:12px; flex-wrap:wrap }
+  .rcount{ font-size:14px; }
+  .rcount b{ font-size:16px; color:var(--green-700) }
+  .rhead .spacer{flex:1}
+  .selectlike{
+    display:inline-flex; align-items:center; gap:6px; background:#fff; border:1px solid var(--rule);
+    border-radius:8px; padding:7px 10px; font-size:12.5px; color:var(--ink); cursor:pointer;
+  }
+  .selectlike select{ border:0; outline:0; background:transparent; font:inherit; color:inherit; cursor:pointer }
+  .viewtoggle{ display:inline-flex; background:#fff; border:1px solid var(--rule); border-radius:8px; overflow:hidden }
+  .viewtoggle button{
+    border:0; background:transparent; padding:7px 11px; cursor:pointer; color:var(--muted);
+    display:grid; place-items:center; border-right:1px solid var(--rule);
+  }
+  .viewtoggle button:last-child{border-right:0}
+  .viewtoggle button.active{ background:var(--green-100); color:var(--green-700) }
+
+  /* ---------- result cards ---------- */
+  .results{display:flex; flex-direction:column; gap:10px}
+  .card{
+    background:#fff; border:1px solid var(--rule); border-radius:12px; padding:14px 16px;
+    display:flex; gap:14px; align-items:flex-start; box-shadow:var(--shadow); transition:border-color .12s;
+  }
+  .card:hover{border-color:var(--green-400)}
+  .ficon{
+    flex:none; width:38px; height:44px; border-radius:6px; display:grid; place-items:center;
+    font-size:9.5px; font-weight:700; color:#fff; letter-spacing:.3px; position:relative;
+  }
+  .ficon.pdf{background:#c0392b} .ficon.xlsx{background:var(--success)}
+  .card-main{flex:1; min-width:0}
+  .card-title{ font-size:15px; font-weight:600; color:var(--green-700); margin:0 0 5px; line-height:1.3 }
+  .card-title:hover{text-decoration:underline; cursor:pointer}
+  .card-meta{ display:flex; flex-wrap:wrap; gap:6px 8px; align-items:center; margin-bottom:6px }
+  .badge{
+    display:inline-flex; align-items:center; gap:5px; font-size:11.5px; font-weight:600;
+    padding:2px 9px; border-radius:6px; background:var(--green-100); color:var(--green-700);
+  }
+  .badge .dot{width:7px; height:7px; border-radius:50%}
+  .badge.code{ background:var(--mint); color:var(--green-600); font-family:ui-monospace,Menlo,monospace; letter-spacing:.3px }
+  .card-sub{ font-size:12.5px; color:var(--muted); display:flex; flex-wrap:wrap; gap:4px 14px }
+  .card-sub b{color:var(--ink); font-weight:600}
+  .card-actions{ display:flex; flex-direction:column; gap:6px; flex:none }
+  .btn-open{
+    background:var(--green-500); color:#fff; border:0; border-radius:8px; padding:7px 15px;
+    font-size:12.5px; font-weight:600; cursor:pointer; white-space:nowrap;
+  }
+  .btn-open:hover{background:var(--green-600)}
+  .btn-ghost{
+    background:#fff; color:var(--green-600); border:1px solid var(--green-300); border-radius:8px;
+    padding:7px 15px; font-size:12.5px; font-weight:600; cursor:pointer; white-space:nowrap;
+  }
+  .btn-ghost:hover{background:var(--green-100)}
+
+  /* table view */
+  table.tbl{ width:100%; border-collapse:collapse; background:#fff; border:1px solid var(--rule);
+    border-radius:12px; overflow:hidden; box-shadow:var(--shadow) }
+  .tbl thead th{ background:var(--green-700); color:#fff; text-align:left; font-size:12px; font-weight:600;
+    padding:10px 12px }
+  .tbl tbody td{ padding:10px 12px; border-top:1px solid var(--rule); font-size:12.5px; vertical-align:top }
+  .tbl tbody tr:nth-child(even) td{background:var(--green-100)}
+  .tbl a.docn{color:var(--green-700); font-weight:600; text-decoration:none; cursor:pointer}
+  .tbl a.docn:hover{text-decoration:underline}
+
+  /* ---------- guided landing ---------- */
+  .guide{ background:#fff; border:1px solid var(--rule); border-radius:14px; padding:26px; box-shadow:var(--shadow) }
+  .guide h2{ font-size:17px; margin:0 0 4px; color:var(--green-700) }
+  .guide p.lead{ color:var(--muted); margin:0 0 20px; font-size:13.5px; max-width:60ch }
+  .guide h3{ font-size:12px; text-transform:uppercase; letter-spacing:.6px; color:var(--muted);
+    margin:22px 0 10px }
+  .quicks{ display:flex; flex-wrap:wrap; gap:9px }
+  .quick{
+    display:inline-flex; align-items:center; gap:9px; background:var(--mint); border:1px solid var(--green-200);
+    color:var(--green-700); border-radius:10px; padding:11px 14px; font-size:13px; font-weight:600; cursor:pointer;
+    text-align:left;
+  }
+  .quick:hover{ border-color:var(--green-400); background:var(--green-100) }
+  .quick .qi{ width:26px; height:26px; border-radius:7px; background:#fff; display:grid; place-items:center; color:var(--green-500) }
+  .quick small{display:block; font-weight:400; color:var(--muted); font-size:11.5px}
+  .recents{ display:flex; flex-wrap:wrap; gap:8px }
+  .recent{
+    background:#fff; border:1px solid var(--rule); border-radius:20px; padding:6px 14px; font-size:12.5px;
+    color:var(--ink); cursor:pointer; display:inline-flex; align-items:center; gap:8px;
+  }
+  .recent:hover{border-color:var(--green-400); color:var(--green-700)}
+  .recent svg{color:var(--muted)}
+  .browseall{ margin-top:26px; padding-top:18px; border-top:1px solid var(--rule); font-size:13px; color:var(--muted) }
+  .browseall a{ color:var(--green-600); font-weight:600; cursor:pointer; text-decoration:none }
+  .browseall a:hover{text-decoration:underline}
+
+  /* empty state (no results) */
+  .noresults{ background:#fff; border:1px dashed var(--green-300); border-radius:14px; padding:40px 26px;
+    text-align:center; color:var(--muted) }
+  .noresults strong{color:var(--ink); display:block; font-size:15px; margin-bottom:4px}
+
+  /* ---------- rail (refiners) ---------- */
+  .rail{ position:sticky; top:14px }
+  .railcard{ background:#fff; border:1px solid var(--rule); border-radius:14px; box-shadow:var(--shadow); overflow:hidden }
+  .railhead{ display:flex; align-items:center; padding:13px 16px; border-bottom:1px solid var(--rule) }
+  .railhead h3{ margin:0; font-size:14px; color:var(--green-700) }
+  .railhead .n{ margin-left:auto; font-size:11px; background:var(--green-500); color:#fff; border-radius:20px;
+    padding:2px 9px; font-weight:600 }
+  .railhead .n.zero{display:none}
+  .facet{ border-bottom:1px solid var(--rule) }
+  .facet:last-child{border-bottom:0}
+  .facet > .fh{
+    display:flex; align-items:center; gap:8px; width:100%; background:transparent; border:0;
+    padding:12px 16px; cursor:pointer; font-size:13px; font-weight:600; color:var(--ink); text-align:left;
+  }
+  .facet > .fh:hover{background:var(--green-100)}
+  .facet .caret{ margin-left:auto; color:var(--muted); transition:transform .15s }
+  .facet.collapsed .caret{transform:rotate(-90deg)}
+  .facet .fbody{ padding:2px 16px 14px }
+  .facet.collapsed .fbody{display:none}
+  .facet .fsel{ font-size:11px; color:var(--green-500); font-weight:600; margin-left:4px }
+  .miniinput{
+    width:100%; border:1px solid var(--rule); border-radius:7px; padding:7px 9px; font-size:12.5px;
+    outline:0; margin-bottom:8px; color:var(--ink);
+  }
+  .miniinput:focus{border-color:var(--green-400)}
+  .opts{ max-height:186px; overflow:auto; margin:0 -4px; padding:0 4px }
+  .opts::-webkit-scrollbar{width:8px} .opts::-webkit-scrollbar-thumb{background:var(--green-200); border-radius:8px}
+  .opt{ display:flex; align-items:center; gap:9px; padding:6px 6px; border-radius:7px; cursor:pointer; font-size:12.5px }
+  .opt:hover{background:var(--green-100)}
+  .opt input{accent-color:var(--green-500); width:15px; height:15px; flex:none; margin:0}
+  .opt .lab{ flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+  .opt .cnt{ font-size:11px; color:var(--muted); background:var(--bg); border-radius:20px; padding:1px 8px; flex:none }
+  .opt.picked .lab{color:var(--green-700); font-weight:600}
+  .facet .empty{font-size:12px; color:var(--muted); padding:4px}
+
+  .railfoot{ padding:12px 16px; display:flex; gap:8px; align-items:center }
+  .morebtn{
+    flex:1; background:var(--green-700); color:#fff; border:0; border-radius:9px; padding:10px;
+    font-size:13px; font-weight:600; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:8px;
+  }
+  .morebtn:hover{background:var(--green-800)}
+  .morebtn .badge2{ background:var(--warning); color:var(--green-800); border-radius:20px; font-size:11px; padding:1px 8px; font-weight:700 }
+  .clearall{ background:transparent; border:0; color:var(--muted); font-size:12.5px; cursor:pointer; text-decoration:underline }
+  .clearall:hover{color:var(--error)}
+
+  /* ---------- drawer (more filters) ---------- */
+  .scrim{ position:fixed; inset:0; background:rgba(13,32,24,.42); opacity:0; pointer-events:none; transition:opacity .2s; z-index:40 }
+  .scrim.open{opacity:1; pointer-events:auto}
+  .drawer{
+    position:fixed; top:0; right:0; height:100%; width:420px; max-width:92vw; background:#fff; z-index:41;
+    transform:translateX(100%); transition:transform .22s ease; display:flex; flex-direction:column; box-shadow:var(--shadow-lg);
+  }
+  .drawer.open{transform:none}
+  .dhead{ display:flex; align-items:center; padding:16px 20px; border-bottom:1px solid var(--rule) }
+  .dhead h3{margin:0; font-size:16px; color:var(--green-700)}
+  .dhead .close{ margin-left:auto; border:0; background:var(--green-100); color:var(--green-600); width:30px; height:30px;
+    border-radius:8px; cursor:pointer; font-size:18px }
+  .dhead .close:hover{background:var(--green-200)}
+  .dbody{ flex:1; overflow:auto; padding:6px 20px 20px }
+  .dgroup{ margin-top:18px }
+  .dgroup > .gt{ font-size:11px; text-transform:uppercase; letter-spacing:.6px; color:var(--green-500);
+    font-weight:700; margin:0 0 8px; padding-bottom:6px; border-bottom:1px solid var(--green-100) }
+  .field{ margin-bottom:11px }
+  .field label{ display:block; font-size:12px; color:var(--muted); margin-bottom:4px; font-weight:600 }
+  .field select, .field input{
+    width:100%; border:1px solid var(--rule); border-radius:8px; padding:9px 10px; font:inherit; font-size:13px;
+    color:var(--ink); outline:0; background:#fff;
+  }
+  .field select:focus, .field input:focus{border-color:var(--green-400)}
+  .field.two{ display:grid; grid-template-columns:1fr 1fr; gap:8px }
+  .field.two label{grid-column:1/3}
+  .dfoot{ padding:14px 20px; border-top:1px solid var(--rule); display:flex; gap:10px }
+  .dfoot .apply{ flex:1; background:var(--green-500); color:#fff; border:0; border-radius:9px; padding:11px; font-weight:600; cursor:pointer }
+  .dfoot .apply:hover{background:var(--green-600)}
+  .dfoot .reset{ background:#fff; border:1px solid var(--rule); border-radius:9px; padding:11px 16px; cursor:pointer; color:var(--muted) }
+
+  /* callout note pinned bottom-left for reviewers */
+  .note{ position:fixed; left:14px; bottom:14px; max-width:270px; background:var(--green-800); color:#dfeee7;
+    border-radius:12px; padding:12px 14px 12px; font-size:11.5px; line-height:1.5; box-shadow:var(--shadow-lg); z-index:30 }
+  .note b{color:#fff}
+  .note .nx{ position:absolute; top:6px; right:8px; border:0; background:transparent; color:#9fbcae; cursor:pointer; font-size:15px }
+  @media(max-width:640px){ .note{display:none} }
+</style>
+</head>
+<body>
+
+  <div class="brandbar">
+    <div class="brandmark">UF</div>
+    <div class="title">Finance</div>
+    <span class="env">UAT</span>
+    <div class="spacer"></div>
+    <div class="who">Manager Library · Document Search</div>
+  </div>
+
+  <div class="hero">
+    <div class="hero-inner">
+      <h1>Find a document</h1>
+      <p class="sub">Search by fund, manager, or document — or start from a common lookup below.</p>
+      <div class="searchrow">
+        <label class="searchbox">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+          <input id="q" type="text" placeholder="e.g. Viking PCAP, Sequoia capital call, tax estimate 2025…" autocomplete="off">
+          <button class="x" id="qx" title="Clear">&times;</button>
+        </label>
+        <button class="searchbtn" id="go">Search</button>
+      </div>
+      <div class="scopes" id="scopes">
+        <button class="scope active" data-scope="all">All</button>
+        <button class="scope" data-scope="cash">Cash Library</button>
+        <button class="scope" data-scope="ipa">IPA Dashboard</button>
+        <button class="scope" data-scope="capdist">Capital Distribution</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <!-- LEFT: results / guide -->
+    <div>
+      <div class="chipbar" id="chips"></div>
+
+      <div id="resultsHeader" class="rhead" style="display:none">
+        <div class="rcount"><b id="count">0</b> documents</div>
+        <div class="spacer"></div>
+        <div class="selectlike">
+          Sort:&nbsp;
+          <select id="sort">
+            <option value="relevance">Best match</option>
+            <option value="date_desc">Reporting date — newest</option>
+            <option value="date_asc">Reporting date — oldest</option>
+            <option value="fund">Fund A–Z</option>
+            <option value="created">Recently added</option>
+          </select>
+        </div>
+        <div class="viewtoggle" id="viewtoggle">
+          <button data-view="cards" class="active" title="Card view">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="5" rx="1"/><rect x="3" y="12" width="18" height="5" rx="1"/></svg>
+          </button>
+          <button data-view="table" title="Table view">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <div id="stage"></div>
+    </div>
+
+    <!-- RIGHT: refiners -->
+    <div class="rail">
+      <div class="railcard">
+        <div class="railhead">
+          <h3>Filters</h3>
+          <span class="n zero" id="railN">0</span>
+        </div>
+        <div id="facets"></div>
+        <div class="railfoot">
+          <button class="morebtn" id="openDrawer">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M7 12h10M10 18h4"/></svg>
+            More filters
+            <span class="badge2" id="moreBadge" style="display:none">0</span>
+          </button>
+        </div>
+        <div class="railfoot" style="padding-top:0">
+          <button class="clearall" id="clearAll2">Clear all filters</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- drawer -->
+  <div class="scrim" id="scrim"></div>
+  <aside class="drawer" id="drawer" aria-label="All filters">
+    <div class="dhead">
+      <h3>All filters</h3>
+      <button class="close" id="closeDrawer" title="Close">&times;</button>
+    </div>
+    <div class="dbody">
+      <div class="dgroup">
+        <p class="gt">Fund &amp; Manager</p>
+        <div class="field"><label>Manager Name</label><select data-df="manager"><option value="">Any</option></select></div>
+        <div class="field"><label>Fund Name</label><select data-df="fund"><option value="">Any</option></select></div>
+        <div class="field"><label>Fund Short Name</label><select data-df="fundshort"><option value="">Any</option></select></div>
+        <div class="field"><label>Legal Short Name</label><select data-df="legalshort"><option value="">Any</option></select></div>
+      </div>
+      <div class="dgroup">
+        <p class="gt">Entity</p>
+        <div class="field"><label>Willett Entity</label><select data-df="willett"><option value="">Any</option></select></div>
+        <div class="field"><label>Legal Entity</label><select data-df="legal"><option value="">Any</option></select></div>
+        <div class="field"><label>Entity Code</label><select data-df="entitycode"><option value="">Any</option></select></div>
+      </div>
+      <div class="dgroup">
+        <p class="gt">Classification</p>
+        <div class="field"><label>Summary Asset Class</label><select data-df="summaryasset"><option value="">Any</option></select></div>
+        <div class="field"><label>Asset Class (code)</label><select data-df="assetCode"><option value="">Any</option></select></div>
+      </div>
+      <div class="dgroup">
+        <p class="gt">Document</p>
+        <div class="field"><label>Document Category</label><select data-df="category"><option value="">Any</option></select></div>
+        <div class="field"><label>Document Type</label><select data-df="docType"><option value="">Any</option></select></div>
+        <div class="field"><label>Type Level 2</label><select data-df="lvl2"><option value="">Any</option></select></div>
+        <div class="field"><label>Type Level 3</label><select data-df="lvl3"><option value="">Any</option></select></div>
+      </div>
+      <div class="dgroup">
+        <p class="gt">People</p>
+        <div class="field"><label>Team Lead</label><select data-df="teamlead"><option value="">Any</option></select></div>
+      </div>
+      <div class="dgroup">
+        <p class="gt">Dates</p>
+        <div class="field"><label>Reporting Year</label><select data-df="year"><option value="">Any</option></select></div>
+        <div class="field"><label>Reporting Quarter</label><select data-df="quarter"><option value="">Any</option></select></div>
+        <div class="field two"><label>Reporting date range</label>
+          <input type="date" data-df="rdFrom"><input type="date" data-df="rdTo"></div>
+        <div class="field two"><label>Created date range</label>
+          <input type="date" data-df="cdFrom"><input type="date" data-df="cdTo"></div>
+      </div>
+    </div>
+    <div class="dfoot">
+      <button class="apply" id="applyDrawer">Show results</button>
+      <button class="reset" id="resetDrawer">Reset</button>
+    </div>
+  </aside>
+
+  <div class="note" id="note">
+    <button class="nx" id="noteX">&times;</button>
+    <b>Prototype.</b> Sample data mirrors the real library. Try a quick lookup, watch the count and filter counts update, then open <b>More filters</b> to see the 19 refiners grouped and out of the way.
+  </div>
+
+<script>
+/* ---------------- sample data ---------------- */
+const DOCS = [
+  ["Sequoia Capital U.S. Growth Fund VI, L.P.","Sequoia Capital","Unaudited (PCAP)","VVC","2025-12-31","2026-02-10","pdf","63019"],
+  ["Sequoia Capital US Scout Seed Fund III, L.P.","Sequoia Capital","Unaudited (PCAP)","VVC","2024-06-30","2024-08-15","pdf","33114"],
+  ["Sequoia Capital US Growth Fund VII, L.P.","Sequoia Capital","Unaudited (PCAP)","VVC","2025-12-31","2026-02-10","pdf","050911"],
+  ["Sequoia Capital U.S. Growth Fund VIII, L.P.","Sequoia Capital","Unaudited (PCAP)","VVC","2025-09-30","2025-11-03","pdf","NPT"],
+  ["Sequoia Capital U.S. Growth Fund IX, L.P.","Sequoia Capital","Unaudited (PCAP)","VVC","2025-12-31","2026-02-10","pdf","63019"],
+  ["Sequoia Capital U.S. Venture Fund XVI, L.P.","Sequoia Capital","Unaudited (PCAP)","VVC","2025-09-30","2025-11-03","pdf","63019"],
+  ["Sequoia Capital U.S. Venture Fund XV, L.P.","Sequoia Capital","Unaudited (PCAP)","VVC","2025-12-31","2026-02-10","pdf","63019"],
+  ["Viking Long Fund LP","Viking Global Investors LP","Unaudited (PCAP)","PED","2026-07-31","2026-08-14","pdf","63019"],
+  ["Viking Long Fund LP","Viking Global Investors LP","Unaudited (PCAP)","PED","2026-07-31","2026-08-14","pdf","SITE"],
+  ["Viking Long Fund LP","Viking Global Investors LP","Performance Estimates (PCAP)","PED","2026-06-30","2026-07-02","xlsx",""],
+  ["Viking Long Fund LP","Viking Global Investors LP","Performance Estimates (PCAP)","PED","2026-06-30","2026-07-05","xlsx","Revised"],
+  ["Altos Hybrid 6, L.P.","Altos Ventures Management, Inc.","Capital Call (CCD)","VVC","2026-08-13","2026-08-13","pdf","63019"],
+  ["Altos Hybrid 6, L.P.","Altos Ventures Management, Inc.","Capital Call (CCD)","VVC","2026-08-13","2026-08-13","pdf","113011"],
+  ["Altos Hybrid 6, L.P.","Altos Ventures Management, Inc.","Capital Call (CCD)","VVC","2026-08-13","2026-08-13","pdf","41023"],
+  ["Kinetic Partners Offshore, LP","Kinetic Partners GP, LLC","Performance Estimates (PCAP)","HEQ","2026-07-31","2026-08-04","pdf",""],
+  ["Kinetic Partners Onshore, LP","Kinetic Partners GP, LLC","Performance Estimates (PCAP)","HEQ","2026-07-31","2026-08-04","pdf","41023"],
+  ["Arrowstreet Capital Global All Country Alpha Extension Fund (Cayman) Limited","Arrowstreet Capital, Limited Partnership","Performance Estimates (PCAP)","PED","2026-07-30","2026-08-02","pdf",""],
+  ["Consonance Private Equity II, L.P.","Consonance Capital Partners","Tax Estimate (TAX)","VLG","2025-12-31","2026-04-11","pdf","72813"],
+  ["Consonance Private Equity II, L.P.","Consonance Capital Partners","Tax Estimate (TAX)","VLG","2025-12-31","2026-04-11","pdf","113011"],
+  ["Overlook 3G Investments, L.P.","Overlook Investments, L.P.","Legal IO","PEI","2026-08-05","2026-08-06","pdf","Innovative Health SPV"],
+  ["Deerfield Private Design Fund III, L.P.","Deerfield Management Company, L.P.","Unaudited (PCAP)","VIC","2026-06-30","2026-08-01","pdf","050911"],
+  ["Deerfield Private Design Fund IV, L.P.","Deerfield Management Company, L.P.","Unaudited (PCAP)","VIC","2026-06-30","2026-08-01","pdf","63019"],
+  ["Deerfield Private Design Fund III, L.P.","Deerfield Management Company, L.P.","Unaudited (PCAP)","VIC","2026-06-30","2026-08-01","pdf","72813"],
+  ["Deerfield Private Design Fund IV, L.P.","Deerfield Management Company, L.P.","Unaudited (PCAP)","VIC","2026-06-30","2026-08-01","pdf","JCF"],
+  ["Double Eagle V FF, LP","Double Eagle Natural Resources, LP","Capital Call (CCD)","NPD","2026-08-11","2026-08-11","pdf","63019"],
+  ["Double Eagle V FF, LP","Double Eagle Natural Resources, LP","Capital Call (CCD)","NPD","2026-08-11","2026-08-11","pdf","12313"],
+  ["Double Eagle V FF, LP","Double Eagle Natural Resources, LP","Capital Call (CCD)","NPD","2026-08-11","2026-08-11","pdf","113011"],
+  ["TPG Rise Climate II, L.P.","TPG Global, LLC","Unaudited (PCAP)","OEP","2026-03-31","2026-07-02","xlsx","72813"],
+  ["TPG Rise Climate, L.P.","TPG Global, LLC","Unaudited (PCAP)","OEP","2026-03-31","2026-07-02","xlsx","72813"],
+  ["TPG Rise Climate, L.P.","TPG Global, LLC","Performance Estimates (PCAP)","OEP","2026-06-30","2026-07-06","xlsx",""],
+  ["Willett Private Investors (Tax Exempt) I LP","","Organizational Docs","","2013-12-31","2014-01-05","pdf","Certificate of Conversion"],
+  ["Willett Select Investors (Tax Exempt) I LP","","Organizational Docs","","2025-12-01","2025-12-03","pdf","4th AR LPA"],
+].map((r,i)=>({
+  id:i+1, fund:r[0], manager:r[1], docType:r[2], assetCode:r[3],
+  reporting:r[4], created:r[5], file:r[6], ref:r[7]
+}));
+
+/* doc-type display + accent */
+const TYPE = {
+  "Unaudited (PCAP)":       {short:"PCAP",         color:"#64796F"},
+  "Performance Estimates (PCAP)":{short:"Perf Est",color:"#7E9C8F"},
+  "Capital Call (CCD)":     {short:"Capital Call", color:"#F2994A"},
+  "Tax Estimate (TAX)":     {short:"Tax Estimate", color:"#455950"},
+  "Legal IO":               {short:"Legal",        color:"#0A1F44"},
+  "Organizational Docs":    {short:"Org Docs",     color:"#737373"},
+};
+/* light illustrative maps so drawer selects are populated */
+const ASSET_NAME = {VVC:"Venture Capital",PED:"PE / Debt",HEQ:"Hedged Equity",PEI:"PE — Income",VLG:"PE — Legacy",VIC:"Venture — Income",NPD:"Natural Resources",OEP:"Opportunistic"};
+
+/* ---------------- state ---------------- */
+const state = {
+  q:"", scope:"all",
+  filters:{ manager:"", fund:"", docType:"", assetCode:"", year:"", quarter:"" },
+  drawerFilters:{}, // extra fields set only from drawer (manager/fund/etc mirror into filters)
+  sort:"relevance", view:"cards", touched:false
+};
+
+const $ = s=>document.querySelector(s);
+const qtr = m => "Q"+(Math.floor((m-1)/3)+1);
+const fmtDate = s => { if(!s) return "—"; const [y,mo,d]=s.split("-"); const M=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]; return `${M[+mo-1]} ${+d}, ${y}`; };
+const yearOf = s => s? s.slice(0,4):"";
+const qOf = s => s? qtr(+s.slice(5,7)):"";
+
+/* which quick facets show in the rail */
+const QUICK = [
+  {key:"manager",  label:"Manager",       get:d=>d.manager,   search:true},
+  {key:"fund",     label:"Fund",          get:d=>d.fund,      search:true},
+  {key:"docType",  label:"Document type", get:d=>d.docType,   search:false},
+  {key:"assetCode",label:"Asset class",   get:d=>d.assetCode, search:false},
+  {key:"year",     label:"Reporting year",get:d=>yearOf(d.reporting), search:false},
+];
+
+/* ---------------- filtering ---------------- */
+function matchesQuery(d){
+  if(!state.q) return true;
+  const t = (d.fund+" "+d.manager+" "+d.docType+" "+d.assetCode+" "+d.ref+" "+d.reporting).toLowerCase();
+  return state.q.toLowerCase().split(/\s+/).every(w=>t.includes(w));
+}
+function passFilters(d, except){
+  const f = state.filters;
+  if(except!=="manager"  && f.manager  && d.manager!==f.manager) return false;
+  if(except!=="fund"     && f.fund     && d.fund!==f.fund) return false;
+  if(except!=="docType"  && f.docType  && d.docType!==f.docType) return false;
+  if(except!=="assetCode"&& f.assetCode&& d.assetCode!==f.assetCode) return false;
+  if(except!=="year"     && f.year     && yearOf(d.reporting)!==f.year) return false;
+  if(except!=="quarter"  && f.quarter  && qOf(d.reporting)!==f.quarter) return false;
+  return true;
+}
+function results(){
+  let r = DOCS.filter(d=>matchesQuery(d) && passFilters(d,null));
+  const s = state.sort;
+  r.sort((a,b)=>{
+    if(s==="date_desc") return b.reporting.localeCompare(a.reporting);
+    if(s==="date_asc")  return a.reporting.localeCompare(b.reporting);
+    if(s==="fund")      return a.fund.localeCompare(b.fund);
+    if(s==="created")   return b.created.localeCompare(a.created);
+    return 0;
+  });
+  return r;
+}
+/* facet options with counts (respect other active filters) */
+function facetOptions(fdef){
+  const base = DOCS.filter(d=>matchesQuery(d) && passFilters(d, fdef.key));
+  const map = new Map();
+  base.forEach(d=>{ const v=fdef.get(d); if(!v) return; map.set(v,(map.get(v)||0)+1); });
+  let arr=[...map.entries()].map(([v,c])=>({v,c}));
+  if(fdef.key==="year") arr.sort((a,b)=>b.v.localeCompare(a.v));
+  else arr.sort((a,b)=>b.c-a.c || a.v.localeCompare(b.v));
+  return arr;
+}
+function activeCount(){ return Object.values(state.filters).filter(Boolean).length; }
+
+/* ---------------- rendering ---------------- */
+const facetSearchState = {}; // key -> text
+const collapsed = {};        // key -> bool
+
+function render(){
+  const showGuide = !state.touched && !state.q && activeCount()===0;
+  renderChips();
+  renderFacets();
+  renderRail();
+  const rh = $("#resultsHeader");
+  if(showGuide){ rh.style.display="none"; renderGuide(); return; }
+  rh.style.display="flex";
+  const r = results();
+  $("#count").textContent = r.length.toLocaleString();
+  if(r.length===0){ renderNoResults(); return; }
+  state.view==="table" ? renderTable(r) : renderCards(r);
+}
+
+function renderGuide(){
+  const quicks = [
+    {t:"Latest PCAPs",  s:"Unaudited capital accounts, newest first", act:()=>{state.filters.docType="Unaudited (PCAP)"; state.sort="date_desc"; $("#sort").value="date_desc";}},
+    {t:"Capital calls this month", s:"CCD notices, Aug 2026", act:()=>{state.filters.docType="Capital Call (CCD)";}},
+    {t:"Viking Global", s:"All documents for this manager", act:()=>{state.filters.manager="Viking Global Investors LP";}},
+    {t:"Sequoia Capital", s:"All documents for this manager", act:()=>{state.filters.manager="Sequoia Capital";}},
+    {t:"Tax estimates 2025", s:"TAX docs, reporting year 2025", act:()=>{state.filters.docType="Tax Estimate (TAX)"; state.filters.year="2025";}},
+  ];
+  const recents = ["Deerfield PCAP","Double Eagle capital call","Kinetic performance estimates"];
+  const ico = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2 3 14h7l-1 8 10-12h-7z"/></svg>`;
+  const clock = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>`;
+  $("#stage").innerHTML = `
+    <div class="guide">
+      <h2>Start your search</h2>
+      <p class="lead">The library holds ~145,000 documents. Rather than scroll all of them, tell us what you need — pick a common lookup, reuse a recent search, or type above.</p>
+      <h3>Common lookups</h3>
+      <div class="quicks">
+        ${quicks.map((q,i)=>`<button class="quick" data-quick="${i}"><span class="qi">${ico}</span><span>${q.t}<small>${q.s}</small></span></button>`).join("")}
+      </div>
+      <h3>Recent searches</h3>
+      <div class="recents">
+        ${recents.map(r=>`<button class="recent" data-recent="${r}">${clock}${r}</button>`).join("")}
+      </div>
+      <div class="browseall">Prefer to scroll everything? <a id="browseAll">Browse all documents →</a></div>
+    </div>`;
+  $("#stage").querySelectorAll("[data-quick]").forEach(b=>b.onclick=()=>{ quicks[+b.dataset.quick].act(); state.touched=true; render(); });
+  $("#stage").querySelectorAll("[data-recent]").forEach(b=>b.onclick=()=>{ setQuery(b.dataset.recent); });
+  $("#browseAll").onclick=()=>{ state.touched=true; render(); };
+}
+
+function renderNoResults(){
+  $("#stage").innerHTML = `<div class="noresults"><strong>No documents match these filters.</strong>
+    Try removing a filter chip above, or broadening your search.</div>`;
+}
+
+function renderCards(r){
+  $("#stage").innerHTML = `<div class="results">${r.map(cardHTML).join("")}</div>`;
+}
+function cardHTML(d){
+  const ty = TYPE[d.docType]||{short:d.docType,color:"#64796F"};
+  const title = d.fund || "(Untitled document)";
+  const fileTag = d.file==="xlsx"?"XLSX":"PDF";
+  return `<div class="card">
+    <div class="ficon ${d.file}">${fileTag}</div>
+    <div class="card-main">
+      <p class="card-title">${title}</p>
+      <div class="card-meta">
+        <span class="badge"><span class="dot" style="background:${ty.color}"></span>${ty.short}</span>
+        <span class="badge">${fmtDate(d.reporting)}</span>
+        ${d.assetCode?`<span class="badge code">${d.assetCode}</span>`:""}
+      </div>
+      <div class="card-sub">
+        ${d.manager?`<span><b>${d.manager}</b></span>`:`<span>No manager assigned</span>`}
+        ${d.ref?`<span>Ref: ${d.ref}</span>`:""}
+        <span>Added ${fmtDate(d.created)}</span>
+      </div>
+    </div>
+    <div class="card-actions">
+      <button class="btn-open">Open</button>
+      <button class="btn-ghost">Preview</button>
+    </div>
+  </div>`;
+}
+function renderTable(r){
+  $("#stage").innerHTML = `<table class="tbl"><thead><tr>
+      <th>Fund</th><th>Document type</th><th>Manager</th><th>Asset</th><th>Reporting date</th>
+    </tr></thead><tbody>${r.map(d=>{
+      const ty=TYPE[d.docType]||{short:d.docType};
+      return `<tr>
+        <td><a class="docn">${d.fund||"(Untitled)"}</a>${d.ref?`<div style="color:var(--muted);font-size:11.5px">${d.file.toUpperCase()} · ${d.ref}</div>`:`<div style="color:var(--muted);font-size:11.5px">${d.file.toUpperCase()}</div>`}</td>
+        <td>${ty.short}</td>
+        <td>${d.manager||"—"}</td>
+        <td>${d.assetCode||"—"}</td>
+        <td>${fmtDate(d.reporting)}</td>
+      </tr>`;
+    }).join("")}</tbody></table>`;
+}
+
+/* chips */
+const CHIP_LABEL = {manager:"Manager",fund:"Fund",docType:"Type",assetCode:"Asset",year:"Year",quarter:"Quarter"};
+function renderChips(){
+  const c = $("#chips"); const parts=[];
+  if(state.q) parts.push(`<span class="chip"><span class="k">search</span>${state.q}<button data-clear="q">&times;</button></span>`);
+  Object.entries(state.filters).forEach(([k,v])=>{ if(v) parts.push(
+    `<span class="chip"><span class="k">${CHIP_LABEL[k]}</span>${TYPE[v]?TYPE[v].short:v}<button data-clear="${k}">&times;</button></span>`); });
+  if(parts.length>1) parts.push(`<button class="chip-clear" id="clearAll1">Clear all</button>`);
+  c.innerHTML = parts.join("");
+  c.querySelectorAll("[data-clear]").forEach(b=>b.onclick=()=>{
+    const k=b.dataset.clear;
+    if(k==="q"){ setQuery(""); return; }
+    state.filters[k]=""; syncDrawer(); render();
+  });
+  const ca=$("#clearAll1"); if(ca) ca.onclick=clearAll;
+}
+
+/* rail facets */
+function renderFacets(){
+  const host=$("#facets"); host.innerHTML="";
+  QUICK.forEach(fdef=>{
+    const opts=facetOptions(fdef);
+    const sel=state.filters[fdef.key];
+    const isCol = collapsed[fdef.key];
+    const el=document.createElement("div");
+    el.className="facet"+(isCol?" collapsed":"");
+    const search = fdef.search ? `<input class="miniinput" placeholder="Filter ${fdef.label.toLowerCase()}…" value="${facetSearchState[fdef.key]||""}">` : "";
+    const txt=(facetSearchState[fdef.key]||"").toLowerCase();
+    const shown = opts.filter(o=>o.v.toLowerCase().includes(txt));
+    el.innerHTML=`
+      <button class="fh">${fdef.label}${sel?`<span class="fsel">· 1</span>`:""}
+        <span class="caret"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></span></button>
+      <div class="fbody">
+        ${search}
+        <div class="opts">
+          ${shown.length? shown.map(o=>`
+            <label class="opt ${sel===o.v?"picked":""}">
+              <input type="checkbox" ${sel===o.v?"checked":""} data-fk="${fdef.key}" data-fv="${encodeURIComponent(o.v)}">
+              <span class="lab" title="${o.v}">${TYPE[o.v]?TYPE[o.v].short:o.v}</span>
+              <span class="cnt">${o.c}</span>
+            </label>`).join("") : `<div class="empty">No matches</div>`}
+        </div>
+      </div>`;
+    host.appendChild(el);
+    el.querySelector(".fh").onclick=()=>{ collapsed[fdef.key]=!isCol; renderFacets(); };
+    if(fdef.search){ const mi=el.querySelector(".miniinput"); mi.oninput=()=>{ facetSearchState[fdef.key]=mi.value; renderFacets(); setTimeout(()=>{ const n=host.querySelectorAll(".facet")[QUICK.indexOf(fdef)].querySelector(".miniinput"); if(n){n.focus(); n.setSelectionRange(n.value.length,n.value.length);} },0); }; }
+    el.querySelectorAll("input[type=checkbox]").forEach(cb=>cb.onchange=()=>{
+      const k=cb.dataset.fk, v=decodeURIComponent(cb.dataset.fv);
+      state.filters[k] = (state.filters[k]===v)?"":v;
+      state.touched=true; syncDrawer(); render();
+    });
+  });
+}
+
+function renderRail(){
+  const n=activeCount();
+  const rn=$("#railN"); rn.textContent=n; rn.classList.toggle("zero",n===0);
+  const mb=$("#moreBadge"); mb.style.display=n>0?"inline-block":"none"; mb.textContent=n;
+}
+
+/* ---------------- drawer ---------------- */
+function populateDrawer(){
+  const uniq = k => [...new Set(DOCS.map(k).filter(Boolean))].sort();
+  const set=(df,vals,map)=>{ const s=$(`select[data-df="${df}"]`); if(!s) return;
+    s.querySelectorAll("option:not([value=''])").forEach(o=>o.remove());
+    vals.forEach(v=>{ const o=document.createElement("option"); o.value=v; o.textContent=map?map(v):v; s.appendChild(o); }); };
+  set("manager", uniq(d=>d.manager));
+  set("fund",    uniq(d=>d.fund));
+  set("docType", uniq(d=>d.docType), v=>TYPE[v]?TYPE[v].short+" — "+v:v);
+  set("assetCode", uniq(d=>d.assetCode), v=>v+(ASSET_NAME[v]?" · "+ASSET_NAME[v]:""));
+  set("year",    [...new Set(DOCS.map(d=>yearOf(d.reporting)))].sort().reverse());
+  set("quarter", ["Q1","Q2","Q3","Q4"]);
+  set("summaryasset", uniq(d=>d.assetCode).map(v=>ASSET_NAME[v]||v).filter((v,i,a)=>a.indexOf(v)===i));
+  set("category", ["Financials","Legal","Tax","Investor Notices"]);
+  // remaining selects are illustrative of the real refiner inventory
+  set("fundshort", uniq(d=>d.fund).map(f=>f.split(",")[0].split(" ").slice(0,2).join(" ")).filter((v,i,a)=>a.indexOf(v)===i));
+  set("legalshort", uniq(d=>d.fund).map(f=>f.split(",")[0]).filter((v,i,a)=>a.indexOf(v)===i));
+  set("willett", ["Willett Advisors LLC","Willett Select Investors","Willett Private Investors"]);
+  set("legal", uniq(d=>d.fund));
+  set("entitycode", ["63019","050911","72813","113011","41023","33114","12313"]);
+  set("teamlead", ["A. Chen","M. Rossi","J. Patel","S. Okafor"]);
+  set("lvl2", ["Capital Account","Notice","Estimate","Filing"]);
+  set("lvl3", ["PCAP","CCD","TAX","IO"]);
+  // wire drawer selects that map to real filters
+  $("#drawer").querySelectorAll("select[data-df], input[data-df]").forEach(ctrl=>{
+    ctrl.onchange=()=>{ const df=ctrl.dataset.df;
+      if(["manager","fund","docType","assetCode","year","quarter"].includes(df)){
+        state.filters[df]=ctrl.value; }
+      state.drawerFilters[df]=ctrl.value;
+    };
+  });
+}
+function syncDrawer(){ // reflect rail changes back into drawer selects
+  ["manager","fund","docType","assetCode","year","quarter"].forEach(df=>{
+    const s=$(`select[data-df="${df}"]`); if(s) s.value=state.filters[df]||"";
+  });
+}
+function openDrawer(){ syncDrawer(); $("#scrim").classList.add("open"); $("#drawer").classList.add("open"); }
+function closeDrawer(){ $("#scrim").classList.remove("open"); $("#drawer").classList.remove("open"); }
+
+/* ---------------- controls ---------------- */
+function setQuery(v){ state.q=v; $("#q").value=v; $("#qx").style.display=v?"block":"none"; state.touched=true; render(); }
+function clearAll(){
+  state.q=""; $("#q").value=""; $("#qx").style.display="none";
+  Object.keys(state.filters).forEach(k=>state.filters[k]="");
+  state.drawerFilters={}; state.touched=false;
+  $("#drawer").querySelectorAll("select[data-df]").forEach(s=>s.value="");
+  $("#drawer").querySelectorAll("input[data-df]").forEach(i=>i.value="");
+  render();
+}
+
+$("#q").addEventListener("input",e=>{ state.q=e.target.value; $("#qx").style.display=e.target.value?"block":"none"; if(e.target.value) state.touched=true; render(); });
+$("#q").addEventListener("keydown",e=>{ if(e.key==="Enter"){ state.touched=true; render(); }});
+$("#go").onclick=()=>{ state.touched=true; render(); };
+$("#qx").onclick=()=>setQuery("");
+$("#sort").onchange=e=>{ state.sort=e.target.value; render(); };
+document.querySelectorAll("#viewtoggle button").forEach(b=>b.onclick=()=>{
+  document.querySelectorAll("#viewtoggle button").forEach(x=>x.classList.remove("active"));
+  b.classList.add("active"); state.view=b.dataset.view; render();
+});
+document.querySelectorAll(".scope").forEach(b=>b.onclick=()=>{
+  document.querySelectorAll(".scope").forEach(x=>x.classList.remove("active"));
+  b.classList.add("active"); state.scope=b.dataset.scope; // (scopes are illustrative in prototype)
+});
+$("#openDrawer").onclick=openDrawer;
+$("#closeDrawer").onclick=closeDrawer;
+$("#scrim").onclick=closeDrawer;
+$("#applyDrawer").onclick=()=>{ state.touched=true; closeDrawer(); render(); };
+$("#resetDrawer").onclick=()=>{ clearAll(); populateDrawer(); };
+$("#clearAll2").onclick=clearAll;
+$("#noteX").onclick=()=>$("#note").style.display="none";
+document.addEventListener("keydown",e=>{ if(e.key==="Escape") closeDrawer(); });
+
+/* init */
+populateDrawer();
+render();
+</script>
+</body>
+</html>
